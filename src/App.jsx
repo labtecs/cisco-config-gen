@@ -18,6 +18,9 @@ export default function CiscoConfigGenerator() {
 
   // Bulk Edit State
   const [selectedPortIds, setSelectedPortIds] = useState(new Set());
+  // Track last clicked port for Shift-Selection range logic
+  const [lastSelectedId, setLastSelectedId] = useState(null);
+
   const [bulkMode, setBulkMode] = useState('');
   const [bulkAccessVlan, setBulkAccessVlan] = useState('');
   const [bulkVoiceVlan, setBulkVoiceVlan] = useState('');
@@ -297,16 +300,42 @@ export default function CiscoConfigGenerator() {
 
   // --- Selection & Bulk Handlers ---
 
-  const toggleSelection = (id) => {
+  const toggleSelection = (id, e) => {
     const newSet = new Set(selectedPortIds);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
+    
+    // Handle Shift Selection
+    const isShift = e && (e.shiftKey || (e.nativeEvent && e.nativeEvent.shiftKey));
+
+    if (isShift && lastSelectedId) {
+        // Range Logic
+        const startIdx = ports.findIndex(p => p.id === lastSelectedId);
+        const endIdx = ports.findIndex(p => p.id === id);
+
+        if (startIdx !== -1 && endIdx !== -1) {
+            const min = Math.min(startIdx, endIdx);
+            const max = Math.max(startIdx, endIdx);
+            
+            // Add all ports in range to selection
+            for (let i = min; i <= max; i++) {
+                newSet.add(ports[i].id);
+            }
+        }
+    } else {
+        // Standard Toggle Logic
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        
+        // Update anchor only on normal click
+        setLastSelectedId(id);
+    }
+
     setSelectedPortIds(newSet);
   };
 
   const toggleSelectAll = () => {
     if (selectedPortIds.size === ports.length) {
       setSelectedPortIds(new Set());
+      setLastSelectedId(null);
     } else {
       setSelectedPortIds(new Set(ports.map(p => p.id)));
     }
@@ -316,6 +345,7 @@ export default function CiscoConfigGenerator() {
     // Select all ports that match this access vlan
     const matchingIds = ports.filter(p => p.accessVlan === vlanId && p.mode === 'access').map(p => p.id);
     setSelectedPortIds(new Set(matchingIds));
+    setLastSelectedId(null);
   };
 
   const applyBulkEdit = () => {
@@ -459,7 +489,7 @@ export default function CiscoConfigGenerator() {
                                     const isIncluded = portData?.includeInConfig;
 
                                     return (
-                                        <div key={portNum} className="group relative" onClick={() => toggleSelection(targetId)}>
+                                        <div key={portNum} className="group relative" onClick={(e) => toggleSelection(targetId, e)}>
                                             <div className={`w-8 h-6 rounded-sm border-t-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
                                                 {hasVoice && <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-purple-400 rounded-full border border-slate-800"></div>}
                                             </div>
@@ -490,7 +520,7 @@ export default function CiscoConfigGenerator() {
                                     const isIncluded = portData?.includeInConfig;
 
                                     return (
-                                        <div key={portNum} className="group relative" onClick={() => toggleSelection(targetId)}>
+                                        <div key={portNum} className="group relative" onClick={(e) => toggleSelection(targetId, e)}>
                                             <div className="text-[9px] text-slate-400 text-center font-mono mb-0.5">{portNum}</div>
                                             <div className={`w-8 h-6 rounded-sm border-b-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
                                                 {hasVoice && <div className="absolute -top-1 -right-1 w-2 h-2 bg-purple-400 rounded-full border border-slate-800"></div>}
@@ -619,7 +649,7 @@ export default function CiscoConfigGenerator() {
                                             type="checkbox" 
                                             className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
                                             checked={selectedPortIds.has(port.id)}
-                                            onChange={() => toggleSelection(port.id)}
+                                            onChange={(e) => toggleSelection(port.id, e)}
                                         />
                                     </td>
                                     <td className="p-3 font-mono text-xs font-bold text-slate-600">{port.name}</td>
@@ -736,8 +766,8 @@ export default function CiscoConfigGenerator() {
                         Neue Funktionen
                     </h3>
                     <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                        <li><strong>Detected VLANs:</strong> Oben in der Liste siehst du gefundene VLANs aus deiner Config. Klicke darauf, um alle zugehörigen Ports automatisch auszuwählen.</li>
-                        <li><strong>Config Exclude (Power-Button):</strong> Ganz rechts in der Tabelle kannst du Ports ausschalten. Sie werden dann in der generierten Config ignoriert (ausgegraut).</li>
+                        <li><strong>Shift-Klick (Auswahlbereich):</strong> Halte die Shift-Taste gedrückt und klicke auf einen weiteren Port, um alle dazwischenliegenden Ports auszuwählen.</li>
+                        <li><strong>Detected VLANs:</strong> Klicke auf erkannte VLANs, um alle zugehörigen Ports auszuwählen.</li>
                     </ul>
                 </div>
             </div>
