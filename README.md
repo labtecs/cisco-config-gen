@@ -66,10 +66,6 @@ Entwicklungsserver starten:
 npm run dev
 
 
-(App läuft meist unter http://localhost:5173)
-
-Für Produktion bauen:
-
 npm run build
 
 Lizenz
