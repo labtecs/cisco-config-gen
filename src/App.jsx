@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, CheckSquare, Square, Edit3, X } from 'lucide-react';
+import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, CheckSquare, Square, Edit3, X, Power, Filter } from 'lucide-react';
 
 export default function CiscoConfigGenerator() {
   // --- State ---
-  const [switchModel, setSwitchModel] = useState(48); // 8, 24, 48
+  const [switchModel, setSwitchModel] = useState(48); // 8, 12, 16, 24, 48
   const [stackSize, setStackSize] = useState(1);
   const [portNaming, setPortNaming] = useState('stack'); // 'simple' (Gi0/1) or 'stack' (Gi1/0/1)
   const [baseInterfaceType, setBaseInterfaceType] = useState('GigabitEthernet');
@@ -12,6 +12,9 @@ export default function CiscoConfigGenerator() {
   // Port Data Structure
   const [ports, setPorts] = useState([]);
   const [generatedConfig, setGeneratedConfig] = useState('');
+  
+  // Detected VLANs from Upload
+  const [detectedVlans, setDetectedVlans] = useState([]);
 
   // Bulk Edit State
   const [selectedPortIds, setSelectedPortIds] = useState(new Set());
@@ -21,6 +24,7 @@ export default function CiscoConfigGenerator() {
   const [bulkTrunkVlans, setBulkTrunkVlans] = useState('');
   const [bulkPortfast, setBulkPortfast] = useState('no_change'); // no_change, on, off
   const [bulkSecurity, setBulkSecurity] = useState('no_change'); // no_change, on, off
+  const [bulkInclude, setBulkInclude] = useState('no_change'); // no_change, include, exclude
 
   // --- Initialization & Updates ---
 
@@ -68,7 +72,8 @@ export default function CiscoConfigGenerator() {
             nativeVlan: 1,
             portfast: false,
             portSecurity: false,
-            voiceVlan: ''
+            voiceVlan: '',
+            includeInConfig: true // Default: include all ports on fresh init
           });
         }
       }
@@ -101,14 +106,24 @@ export default function CiscoConfigGenerator() {
     let detectedMaxPort = 0;
     let detectedVoiceVlan = ''; 
 
-    // Pre-scan for global voice vlan
+    // Collection for detection
     const voiceVlanCounts = {};
+    const foundAccessVlans = new Set();
+
+    // Pre-scan pass
     lines.forEach(line => {
-      if (line.trim().includes('switchport voice vlan')) {
-        const vlan = line.trim().split('vlan ')[1];
+      const trimmed = line.trim();
+      if (trimmed.includes('switchport voice vlan')) {
+        const vlan = trimmed.split('vlan ')[1];
         voiceVlanCounts[vlan] = (voiceVlanCounts[vlan] || 0) + 1;
       }
+      if (trimmed.includes('switchport access vlan')) {
+        const vlan = trimmed.split('vlan ')[1];
+        if(vlan) foundAccessVlans.add(vlan);
+      }
     });
+
+    // Set detected global voice vlan
     let maxCount = 0;
     Object.entries(voiceVlanCounts).forEach(([vlan, count]) => {
       if (count > maxCount) {
@@ -117,6 +132,9 @@ export default function CiscoConfigGenerator() {
       }
     });
     if (detectedVoiceVlan) setGlobalVoiceVlan(detectedVoiceVlan);
+    
+    // Set detected Access VLANs for filtering UI
+    setDetectedVlans(Array.from(foundAccessVlans).sort((a,b) => parseInt(a) - parseInt(b)));
 
     lines.forEach(line => {
       const trimmed = line.trim();
@@ -148,18 +166,45 @@ export default function CiscoConfigGenerator() {
           nativeVlan: 1,
           portfast: false,
           portSecurity: false,
-          voiceVlan: ''
+          voiceVlan: '',
+          includeInConfig: false // DEFAULT: Exclude unless config is found below
         };
       } 
       else if (currentInterface) {
-        if (trimmed.startsWith('description')) currentInterface.description = trimmed.replace('description ', '');
-        else if (trimmed.includes('switchport mode trunk')) currentInterface.mode = 'trunk';
-        else if (trimmed.includes('switchport access vlan')) currentInterface.accessVlan = trimmed.split('vlan ')[1];
-        else if (trimmed.includes('switchport trunk allowed vlan')) currentInterface.trunkVlans = trimmed.replace('switchport trunk allowed vlan ', '');
-        else if (trimmed.includes('switchport trunk native vlan')) currentInterface.nativeVlan = trimmed.split('vlan ')[1];
-        else if (trimmed.includes('spanning-tree portfast')) currentInterface.portfast = true;
-        else if (trimmed.includes('switchport port-security')) currentInterface.portSecurity = true;
-        else if (trimmed.includes('switchport voice vlan')) currentInterface.voiceVlan = trimmed.split('vlan ')[1];
+        // Parsing configuration lines - if any matches, we enable the port
+        if (trimmed.startsWith('description')) {
+          currentInterface.description = trimmed.replace('description ', '');
+          currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('switchport mode')) {
+            if (trimmed.includes('trunk')) currentInterface.mode = 'trunk';
+            // Even if access (default), explicit config means we should include it
+            currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('switchport access vlan')) {
+          currentInterface.accessVlan = trimmed.split('vlan ')[1];
+          currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('switchport trunk allowed vlan')) {
+          currentInterface.trunkVlans = trimmed.replace('switchport trunk allowed vlan ', '');
+          currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('switchport trunk native vlan')) {
+          currentInterface.nativeVlan = trimmed.split('vlan ')[1];
+          currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('spanning-tree portfast')) {
+          currentInterface.portfast = true;
+          currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('switchport port-security')) {
+          currentInterface.portSecurity = true;
+          currentInterface.includeInConfig = true;
+        }
+        else if (trimmed.includes('switchport voice vlan')) {
+          currentInterface.voiceVlan = trimmed.split('vlan ')[1];
+          currentInterface.includeInConfig = true;
+        }
       }
     });
     if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
@@ -167,6 +212,7 @@ export default function CiscoConfigGenerator() {
     let bestFitModel = 48;
     if (detectedMaxPort <= 8) bestFitModel = 8;
     else if (detectedMaxPort <= 12) bestFitModel = 12;
+    else if (detectedMaxPort <= 16) bestFitModel = 16;
     else if (detectedMaxPort <= 24) bestFitModel = 24;
     else bestFitModel = 48;
 
@@ -179,19 +225,28 @@ export default function CiscoConfigGenerator() {
       for (let p = 1; p <= bestFitModel; p++) {
         let genId = detectedNaming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
         if (detectedNaming === 'simple' && detectedStackSize > 1) genId = `${s}/0/${p}`;
+        
         const parsed = newPortsMap.get(genId);
-        mergedPorts.push(parsed || {
-            id: genId,
-            name: `${baseInterfaceType}${genId}`,
-            description: '',
-            mode: 'access',
-            accessVlan: '',
-            trunkVlans: 'all',
-            nativeVlan: 1,
-            portfast: false,
-            portSecurity: false,
-            voiceVlan: ''
-        });
+        
+        if (parsed) {
+            // Use the parsing result (which now knows if it was truly configured)
+            mergedPorts.push(parsed);
+        } else {
+             // Port doesn't exist in file at all -> Exclude
+             mergedPorts.push({
+                id: genId,
+                name: `${baseInterfaceType}${genId}`,
+                description: '',
+                mode: 'access',
+                accessVlan: '',
+                trunkVlans: 'all',
+                nativeVlan: 1,
+                portfast: false,
+                portSecurity: false,
+                voiceVlan: '',
+                includeInConfig: false
+            });
+        }
       }
     }
     setPorts(mergedPorts);
@@ -202,6 +257,9 @@ export default function CiscoConfigGenerator() {
   const generateCiscoConfig = () => {
     let output = "! Generated Switchport Config\n";
     ports.forEach(port => {
+      // SKIP IF NOT INCLUDED
+      if (!port.includeInConfig) return;
+
       output += `interface ${port.name}\n`;
       if (port.description) output += ` description ${port.description}\n`;
       if (port.mode === 'access') {
@@ -228,6 +286,10 @@ export default function CiscoConfigGenerator() {
     setPorts(ports.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
 
+  const toggleInclude = (id) => {
+    setPorts(ports.map(p => p.id === id ? { ...p, includeInConfig: !p.includeInConfig } : p));
+  };
+
   const toggleVoiceVlan = (id, currentVal) => {
     const newVal = currentVal ? '' : (globalVoiceVlan || '1');
     updatePort(id, 'voiceVlan', newVal);
@@ -250,6 +312,12 @@ export default function CiscoConfigGenerator() {
     }
   };
 
+  const selectPortsByVlan = (vlanId) => {
+    // Select all ports that match this access vlan
+    const matchingIds = ports.filter(p => p.accessVlan === vlanId && p.mode === 'access').map(p => p.id);
+    setSelectedPortIds(new Set(matchingIds));
+  };
+
   const applyBulkEdit = () => {
     setPorts(ports.map(p => {
         if (!selectedPortIds.has(p.id)) return p;
@@ -268,6 +336,9 @@ export default function CiscoConfigGenerator() {
 
         if (bulkSecurity === 'on') newPort.portSecurity = true;
         if (bulkSecurity === 'off') newPort.portSecurity = false;
+
+        if (bulkInclude === 'include') newPort.includeInConfig = true;
+        if (bulkInclude === 'exclude') newPort.includeInConfig = false;
 
         return newPort;
     }));
@@ -325,6 +396,7 @@ export default function CiscoConfigGenerator() {
             <select className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none" value={switchModel} onChange={(e) => setSwitchModel(parseInt(e.target.value))}>
               <option value={8}>8 Ports (Compact)</option>
               <option value={12}>12 Ports</option>
+              <option value={16}>16 Ports</option>
               <option value={24}>24 Ports</option>
               <option value={48}>48 Ports (Standard)</option>
             </select>
@@ -384,19 +456,20 @@ export default function CiscoConfigGenerator() {
                                     const isTrunk = portData?.mode === 'trunk';
                                     const isActive = portData?.accessVlan || portData?.description;
                                     const hasVoice = !!portData?.voiceVlan;
+                                    const isIncluded = portData?.includeInConfig;
 
                                     return (
                                         <div key={portNum} className="group relative" onClick={() => toggleSelection(targetId)}>
-                                            <div className={`w-8 h-6 rounded-sm border-t-2 ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
+                                            <div className={`w-8 h-6 rounded-sm border-t-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
                                                 {hasVoice && <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-purple-400 rounded-full border border-slate-800"></div>}
                                             </div>
                                             <div className="text-[9px] text-slate-400 text-center font-mono mt-0.5">{portNum}</div>
                                             <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 bg-black text-white text-xs rounded p-2 z-10 pointer-events-none">
                                                 <div className="font-bold">{portData?.name}</div>
                                                 <div>Mode: {portData?.mode}</div>
+                                                <div>Include: {isIncluded ? 'Yes' : 'No'}</div>
                                                 {portData?.mode === 'access' && <div>VLAN: {portData?.accessVlan || '1'}</div>}
                                                 {portData?.voiceVlan && <div className="text-purple-300">Voice: {portData.voiceVlan}</div>}
-                                                <div className="text-slate-400 mt-1">Click to select</div>
                                             </div>
                                         </div>
                                     );
@@ -414,19 +487,20 @@ export default function CiscoConfigGenerator() {
                                     const isTrunk = portData?.mode === 'trunk';
                                     const isActive = portData?.accessVlan || portData?.description;
                                     const hasVoice = !!portData?.voiceVlan;
+                                    const isIncluded = portData?.includeInConfig;
 
                                     return (
                                         <div key={portNum} className="group relative" onClick={() => toggleSelection(targetId)}>
                                             <div className="text-[9px] text-slate-400 text-center font-mono mb-0.5">{portNum}</div>
-                                            <div className={`w-8 h-6 rounded-sm border-b-2 ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
+                                            <div className={`w-8 h-6 rounded-sm border-b-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
                                                 {hasVoice && <div className="absolute -top-1 -right-1 w-2 h-2 bg-purple-400 rounded-full border border-slate-800"></div>}
                                             </div>
                                             <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-48 bg-black text-white text-xs rounded p-2 z-10 pointer-events-none">
                                                 <div className="font-bold">{portData?.name}</div>
                                                 <div>Mode: {portData?.mode}</div>
+                                                <div>Include: {isIncluded ? 'Yes' : 'No'}</div>
                                                 {portData?.mode === 'access' && <div>VLAN: {portData?.accessVlan || '1'}</div>}
                                                 {portData?.voiceVlan && <div className="text-purple-300">Voice: {portData.voiceVlan}</div>}
-                                                <div className="text-slate-400 mt-1">Click to select</div>
                                             </div>
                                         </div>
                                     );
@@ -443,12 +517,33 @@ export default function CiscoConfigGenerator() {
             
             {/* LEFT: CONFIG TABLE */}
             <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[800px] relative">
-                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                    <h2 className="font-semibold text-slate-700 flex items-center gap-2">
-                        <Activity size={18} />
-                        Port Configuration
-                    </h2>
-                    <span className="text-xs text-slate-400">Total Ports: {ports.length}</span>
+                <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                        <h2 className="font-semibold text-slate-700 flex items-center gap-2">
+                            <Activity size={18} />
+                            Port Configuration
+                        </h2>
+                        <span className="text-xs text-slate-400">Total Ports: {ports.length}</span>
+                    </div>
+                    
+                    {/* Detected VLANs Filter */}
+                    {detectedVlans.length > 0 && (
+                        <div className="flex items-center gap-2 text-xs animate-in fade-in">
+                            <span className="text-slate-400 flex items-center gap-1"><Filter size={12}/> Detected VLANs:</span>
+                            <div className="flex flex-wrap gap-2">
+                                {detectedVlans.map(vlan => (
+                                    <button 
+                                        key={vlan}
+                                        onClick={() => selectPortsByVlan(vlan)}
+                                        className="bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border border-slate-200 px-2 py-0.5 rounded-full transition-colors font-mono cursor-pointer"
+                                        title={`Click to select all ports in VLAN ${vlan}`}
+                                    >
+                                        {vlan}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* BULK EDIT TOOLBAR (TOP) */}
@@ -480,6 +575,12 @@ export default function CiscoConfigGenerator() {
                                 <option value="on">Enable PortFast</option>
                                 <option value="off">Disable PortFast</option>
                             </select>
+
+                            <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkInclude} onChange={(e) => setBulkInclude(e.target.value)}>
+                                <option value="no_change">No Change (Cfg)</option>
+                                <option value="include">Include in Config</option>
+                                <option value="exclude">Exclude from Config</option>
+                            </select>
                         </div>
 
                         <button onClick={applyBulkEdit} className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 px-4 rounded transition shadow-lg flex items-center gap-2">
@@ -507,11 +608,12 @@ export default function CiscoConfigGenerator() {
                                 <th className="p-3 font-medium w-24 text-center bg-slate-50" title="PortFast">Fast</th>
                                 <th className="p-3 font-medium w-24 text-center bg-slate-50" title="Port Security">Sec</th>
                                 <th className="p-3 font-medium bg-slate-50">Extra (Voice/Native)</th>
+                                <th className="p-3 font-medium bg-slate-50 w-16 text-center" title="Include in Config">Cfg</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {ports.map((port) => (
-                                <tr key={port.id} className={`${selectedPortIds.has(port.id) ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-blue-50'} transition-colors group`}>
+                                <tr key={port.id} className={`${!port.includeInConfig ? 'opacity-40 grayscale bg-slate-50' : ''} ${selectedPortIds.has(port.id) ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-blue-50'} transition-all group`}>
                                     <td className="p-3 text-center">
                                         <input 
                                             type="checkbox" 
@@ -528,6 +630,7 @@ export default function CiscoConfigGenerator() {
                                             className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none transition-colors text-slate-700"
                                             value={port.description}
                                             onChange={(e) => updatePort(port.id, 'description', e.target.value)}
+                                            disabled={!port.includeInConfig}
                                         />
                                     </td>
                                     <td className="p-3">
@@ -535,6 +638,7 @@ export default function CiscoConfigGenerator() {
                                             className="w-full bg-slate-100 border-none rounded py-1 px-2 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-200"
                                             value={port.mode}
                                             onChange={(e) => updatePort(port.id, 'mode', e.target.value)}
+                                            disabled={!port.includeInConfig}
                                         >
                                             <option value="access">Access</option>
                                             <option value="trunk">Trunk</option>
@@ -548,6 +652,7 @@ export default function CiscoConfigGenerator() {
                                                 className="w-full p-1 border border-slate-200 rounded text-center"
                                                 value={port.accessVlan}
                                                 onChange={(e) => updatePort(port.id, 'accessVlan', e.target.value)}
+                                                disabled={!port.includeInConfig}
                                             />
                                         ) : (
                                             <input 
@@ -556,23 +661,24 @@ export default function CiscoConfigGenerator() {
                                                 className="w-full p-1 border border-slate-200 rounded text-xs"
                                                 value={port.trunkVlans}
                                                 onChange={(e) => updatePort(port.id, 'trunkVlans', e.target.value)}
+                                                disabled={!port.includeInConfig}
                                             />
                                         )}
                                     </td>
                                     <td className="p-3 text-center">
-                                        <input type="checkbox" className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" checked={port.portfast} onChange={(e) => updatePort(port.id, 'portfast', e.target.checked)}/>
+                                        <input type="checkbox" className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" checked={port.portfast} onChange={(e) => updatePort(port.id, 'portfast', e.target.checked)} disabled={!port.includeInConfig}/>
                                     </td>
                                     <td className="p-3 text-center">
                                          {port.mode === 'access' && (
-                                            <input type="checkbox" className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-gray-300" checked={port.portSecurity} onChange={(e) => updatePort(port.id, 'portSecurity', e.target.checked)}/>
+                                            <input type="checkbox" className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-gray-300" checked={port.portSecurity} onChange={(e) => updatePort(port.id, 'portSecurity', e.target.checked)} disabled={!port.includeInConfig}/>
                                          )}
                                     </td>
                                     <td className="p-3">
                                         {port.mode === 'access' ? (
                                             <div className="flex items-center gap-2">
-                                                <input type="checkbox" className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" title="Enable Voice VLAN" checked={!!port.voiceVlan} onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)}/>
+                                                <input type="checkbox" className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" title="Enable Voice VLAN" checked={!!port.voiceVlan} onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)} disabled={!port.includeInConfig}/>
                                                 {port.voiceVlan ? (
-                                                     <input type="text" className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)}/>
+                                                     <input type="text" className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} disabled={!port.includeInConfig}/>
                                                 ) : (
                                                     <span className="text-[10px] text-slate-300 italic">No Voice</span>
                                                 )}
@@ -580,9 +686,18 @@ export default function CiscoConfigGenerator() {
                                         ) : (
                                             <div className="flex items-center gap-1">
                                                 <span className="text-[10px] text-slate-400">Native:</span>
-                                                <input type="text" className="w-12 p-1 text-xs border border-slate-200 rounded" value={port.nativeVlan} onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)}/>
+                                                <input type="text" className="w-12 p-1 text-xs border border-slate-200 rounded" value={port.nativeVlan} onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} disabled={!port.includeInConfig}/>
                                             </div>
                                         )}
+                                    </td>
+                                    <td className="p-3 text-center">
+                                         <button 
+                                            onClick={() => toggleInclude(port.id)}
+                                            className={`p-1.5 rounded-full transition-colors ${port.includeInConfig ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}
+                                            title={port.includeInConfig ? "Included in config" : "Excluded from config"}
+                                         >
+                                            <Power size={14} />
+                                         </button>
                                     </td>
                                 </tr>
                             ))}
@@ -618,12 +733,11 @@ export default function CiscoConfigGenerator() {
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
                     <h3 className="text-blue-800 font-bold mb-2 text-sm flex items-center gap-2">
                         <Shield size={14}/> 
-                        Massenbearbeitung (Bulk Edit)
+                        Neue Funktionen
                     </h3>
                     <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                        <li>Klicke auf die Checkboxen links in der Tabelle, um Ports auszuwählen.</li>
-                        <li>Du kannst auch direkt oben in der Switch-Grafik auf einen Port klicken, um ihn zu selektieren (er wird gelb umrandet).</li>
-                        <li>Die blaue Leiste oben erscheint automatisch, sobald du Ports ausgewählt hast.</li>
+                        <li><strong>Detected VLANs:</strong> Oben in der Liste siehst du gefundene VLANs aus deiner Config. Klicke darauf, um alle zugehörigen Ports automatisch auszuwählen.</li>
+                        <li><strong>Config Exclude (Power-Button):</strong> Ganz rechts in der Tabelle kannst du Ports ausschalten. Sie werden dann in der generierten Config ignoriert (ausgegraut).</li>
                     </ul>
                 </div>
             </div>
