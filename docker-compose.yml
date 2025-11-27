@@ -1,0 +1,9 @@
+version: '3.8'
+
+services:
+  cisco-gen:
+    build: .
+    container_name: cisco-config-gen
+    restart: always
+    ports:
+      - "4949:80"
