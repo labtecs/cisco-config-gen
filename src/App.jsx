@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, Edit3, X, Power, Filter, Lock, CheckSquare, PlusCircle, AlertCircle, Info, RotateCcw } from 'lucide-react';
+import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, Edit3, X, Power, Filter, Lock, CheckSquare, PlusCircle, AlertCircle, Info, RotateCcw, ChevronLeft, ChevronRight, Settings, Zap } from 'lucide-react';
 
 export default function CiscoConfigGenerator() {
   // --- VERSION ---
-  const APP_VERSION = "v1.2";
+  const APP_VERSION = "v2.1";
 
   // --- 1. STATE DEFINITIONS ---
   const [switchModel, setSwitchModel] = useState(48); 
@@ -24,8 +24,13 @@ export default function CiscoConfigGenerator() {
   // Port Data Structure
   const [ports, setPorts] = useState([]);
   
+  // View Mode: 'multi' (Table) or 'single' (Form)
+  const [viewMode, setViewMode] = useState('multi');
+  const [singleEditPortId, setSingleEditPortId] = useState(null);
+  
   // Detected VLANs from Upload
   const [detectedVlans, setDetectedVlans] = useState([]);
+  const [vlanNames, setVlanNames] = useState({}); // Stores VLAN Names (ID -> Name)
 
   // Toast Notification State
   const [toast, setToast] = useState({ show: false, message: '' });
@@ -45,6 +50,7 @@ export default function CiscoConfigGenerator() {
   const [bulkPortfast, setBulkPortfast] = useState('no_change'); 
   const [bulkInclude, setBulkInclude] = useState('no_change'); 
   const [bulkNoShut, setBulkNoShut] = useState('no_change');
+  const [bulkPoeMode, setBulkPoeMode] = useState('');
 
   // Security Bulk
   const [bulkSecurity, setBulkSecurity] = useState('no_change'); 
@@ -66,10 +72,28 @@ export default function CiscoConfigGenerator() {
       setTimeout(() => setToast({ show: false, message: '' }), 3000);
   };
 
+  // Helper to parse VLAN ranges (e.g. "10,20-25")
+  const parseVlanString = (str) => {
+      if (!str || str.toLowerCase() === 'all' || str.toLowerCase() === 'none') return [];
+      const ids = new Set();
+      const parts = str.split(',');
+      parts.forEach(part => {
+          if (part.includes('-')) {
+              const [start, end] = part.split('-').map(n => parseInt(n.trim()));
+              if (!isNaN(start) && !isNaN(end)) {
+                  for (let i = start; i <= end; i++) ids.add(i.toString());
+              }
+          } else {
+              const num = parseInt(part.trim());
+              if (!isNaN(num)) ids.add(num.toString());
+          }
+      });
+      return Array.from(ids);
+  };
+
   // --- 3. CORE LOGIC FUNCTIONS ---
 
-  // Rebuild Port List (Used by Parser & Updates)
-  // NOTE: This logic tries to preserve existing settings when resizing
+  // Rebuild Port List (Used by Parser)
   const rebuildFromMap = (naming, stack, model, upCount, map, baseType, upType) => {
     let mergedPorts = [];
     for (let s = 1; s <= stack; s++) {
@@ -87,7 +111,7 @@ export default function CiscoConfigGenerator() {
             mergedPorts.push({
                 id: genId, name, description: '', mode: 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1, 
                 portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false,
-                noShutdown: true,
+                noShutdown: true, poeMode: 'auto',
                 portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
             });
         }
@@ -109,7 +133,7 @@ export default function CiscoConfigGenerator() {
                 portfast: false, voiceVlan: '', 
                 includeInConfig: false,
                 isUplink: true,
-                noShutdown: true,
+                noShutdown: true, poeMode: 'auto',
                 portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
             });
         }
@@ -118,9 +142,80 @@ export default function CiscoConfigGenerator() {
     setPorts(mergedPorts);
   };
 
+  // Helper to create a single port object (Used by generatePortList)
+  const createPortObject = (existingMap, stackMember, portNum, isUplink) => {
+    const type = isUplink ? uplinkInterfaceType : baseInterfaceType;
+    let portId = '';
+    let interfaceName = '';
+    
+    // Determine Target ID based on current settings
+    if (portNaming === 'simple') {
+        portId = `0/${portNum}`;
+        interfaceName = `${type}0/${portNum}`;
+        if (stackSize > 1) { 
+            portId = `${stackMember}/0/${portNum}`;
+            interfaceName = `${type}${stackMember}/0/${portNum}`;
+        }
+    } else {
+        portId = `${stackMember}/0/${portNum}`;
+        interfaceName = `${type}${stackMember}/0/${portNum}`;
+    }
+
+    // Try to find existing data (Strict Match)
+    let existing = existingMap.get(portId);
+
+    // Fallback/Migration Logic
+    if (!existing && stackMember === 1) {
+        if (portId === `0/${portNum}`) {
+             existing = existingMap.get(`1/0/${portNum}`);
+        } else if (portId === `1/0/${portNum}`) {
+             existing = existingMap.get(`0/${portNum}`);
+        }
+    }
+
+    if (existing) {
+        return { ...existing, id: portId, name: interfaceName, isUplink }; 
+    } else {
+        return {
+            id: portId,
+            name: interfaceName,
+            description: isUplink ? 'Uplink' : '',
+            mode: isUplink ? 'trunk' : 'access', 
+            accessVlan: '', 
+            trunkVlans: 'all',
+            nativeVlan: 1,
+            portfast: !isUplink, 
+            voiceVlan: '',
+            includeInConfig: !isUplink, 
+            isUplink: isUplink,
+            noShutdown: true,
+            poeMode: 'auto', // Default PoE
+            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+        };
+    }
+  };
+
+  // Generate or Update Port List based on hardware settings
+  const generatePortList = useCallback(() => {
+    setPorts(currentPorts => {
+        const currentPortsMap = new Map(currentPorts.map(p => [p.id, p]));
+        let newPorts = [];
+
+        for (let stackMember = 1; stackMember <= stackSize; stackMember++) {
+            for (let portNum = 1; portNum <= switchModel; portNum++) {
+                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, false));
+            }
+            for (let u = 1; u <= uplinkCount; u++) {
+                const portNum = switchModel + u;
+                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, true));
+            }
+        }
+        return newPorts;
+    });
+  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
+
   // Parse Config Logic
   const parseRunningConfig = (text) => {
-    // 1. Hostname & Version (Safe extraction)
     const hostnameMatch = text.match(/^hostname\s+([^\s]+)/m);
     if (hostnameMatch && hostnameMatch[1]) setHostname(hostnameMatch[1]);
     else setHostname('');
@@ -129,16 +224,11 @@ export default function CiscoConfigGenerator() {
     if (versionMatch && versionMatch[1]) {
         const verStr = versionMatch[1];
         setIosVersion(verStr);
-        if (parseFloat(verStr) < 15.0) {
-             setUseModernPortfast(false);
-        } else {
-             setUseModernPortfast(true);
-        }
+        setUseModernPortfast(parseFloat(verStr) >= 15.0);
     } else {
         setIosVersion('');
     }
 
-    // Portfast Syntax Check
     if (text.includes('spanning-tree portfast edge')) setUseModernPortfast(true);
     else if (text.includes('spanning-tree portfast')) setUseModernPortfast(false);
 
@@ -151,8 +241,11 @@ export default function CiscoConfigGenerator() {
     const typeCounts = {};
     const voiceVlanCounts = {};
     const foundVlans = new Set();
+    
+    // VLAN Name Parser State
+    const detectedVlanNames = {};
+    let currentDefVlanId = null;
 
-    // First Pass: Statistics
     lines.forEach(line => {
       const trimmed = line.trim();
       const match = trimmed.match(interfaceRegex);
@@ -168,11 +261,21 @@ export default function CiscoConfigGenerator() {
           const v = vlanPart?.split(/\s+/)[0];
           if(v) foundVlans.add(v);
       }
+      
       const sviMatch = trimmed.match(/^interface Vlan\s?(\d+)/i);
       if (sviMatch && sviMatch[1]) foundVlans.add(sviMatch[1]);
       
+      // VLAN Definition Parsing (Name)
       const l2Match = trimmed.match(/^vlan\s+(\d+)/i);
-      if (l2Match && l2Match[1]) foundVlans.add(l2Match[1]);
+      if (l2Match && l2Match[1]) {
+          foundVlans.add(l2Match[1]);
+          currentDefVlanId = l2Match[1];
+      } else if (currentDefVlanId && trimmed.startsWith('name ')) {
+          const name = trimmed.substring(5).trim();
+          detectedVlanNames[currentDefVlanId] = name;
+      }
+      // Reset context on boundaries
+      if (trimmed.startsWith('interface') || trimmed === '!') currentDefVlanId = null;
     });
 
     // Detect Types
@@ -195,7 +298,6 @@ export default function CiscoConfigGenerator() {
     setBaseInterfaceType(finalBaseType);
     setUplinkInterfaceType(finalUplinkType);
 
-    // Detect Voice VLAN
     let maxCount = 0;
     let detectedVoiceVlan = '';
     Object.entries(voiceVlanCounts).forEach(([vlan, count]) => {
@@ -203,10 +305,9 @@ export default function CiscoConfigGenerator() {
     });
     if (detectedVoiceVlan) setGlobalVoiceVlan(detectedVoiceVlan);
     
-    // Set Detected VLANs (Filter empty)
     setDetectedVlans(Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)));
+    setVlanNames(detectedVlanNames); // Store names
 
-    // Second Pass: Parse Interfaces
     let currentInterface = null;
     
     lines.forEach(line => {
@@ -214,14 +315,12 @@ export default function CiscoConfigGenerator() {
       const match = trimmed.match(interfaceRegex);
       
       if (match) {
-        // Save previous
         if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
         
         const numbering = match[2]; 
         const parts = numbering.split('/');
-        let id = numbering; // Default ID
+        let id = numbering; 
         
-        // Stack Logic
         if (parts.length === 3) {
             detectedNaming = 'stack';
             detectedStackSize = Math.max(detectedStackSize, parseInt(parts[0]));
@@ -236,7 +335,7 @@ export default function CiscoConfigGenerator() {
           name: `${expandType(match[1])}${numbering}`,
           description: '', mode: 'access', accessVlan: '', trunkVlans: '', nativeVlan: 1,
           portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false,
-          noShutdown: true, 
+          noShutdown: true, poeMode: 'auto',
           portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
         };
       } 
@@ -264,6 +363,12 @@ export default function CiscoConfigGenerator() {
         else if (trimmed === 'shutdown') {
              currentInterface.noShutdown = false;
         }
+        else if (trimmed.startsWith('power inline')) {
+            if (trimmed.includes('never')) currentInterface.poeMode = 'never';
+            else if (trimmed.includes('static')) currentInterface.poeMode = 'static';
+            else if (trimmed.includes('auto')) currentInterface.poeMode = 'auto';
+            currentInterface.includeInConfig = true;
+        }
         else if (trimmed.includes('switchport port-security')) {
             currentInterface.includeInConfig = true;
             if (trimmed === 'switchport port-security') {
@@ -283,10 +388,8 @@ export default function CiscoConfigGenerator() {
         }
       }
     });
-    // Save last
     if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
 
-    // Smart Auto-Detection
     let bestFitModel = 48;
     let uplinks = 4;
 
@@ -313,71 +416,19 @@ export default function CiscoConfigGenerator() {
 
   // --- 5. INITIALIZATION & UPDATE EFFECTS ---
 
-  // Default Init (Only runs if no ports loaded initially)
+  // Default Init & Hardware Config Update
   useEffect(() => {
-    if (ports.length === 0) {
-        generatePortList();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
+    // Regenerate ports when hardware settings change (Model, Stack Size, etc.)
+    // Note: generatePortList merges with existing ports to preserve configs
+    generatePortList();
+  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType, generatePortList]);
 
-  const generatePortList = useCallback(() => {
-    // This is the fallback generator if not using the parser flow
-    setPorts(currentPorts => {
-        const currentPortsMap = new Map(currentPorts.map(p => [p.id, p]));
-        let newPorts = [];
-
-        for (let stackMember = 1; stackMember <= stackSize; stackMember++) {
-            for (let portNum = 1; portNum <= switchModel; portNum++) {
-                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, false));
-            }
-            for (let u = 1; u <= uplinkCount; u++) {
-                const portNum = switchModel + u;
-                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, true));
-            }
-        }
-        return newPorts;
-    });
-  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
-
-  const createPortObject = (existingMap, stackMember, portNum, isUplink) => {
-    const type = isUplink ? uplinkInterfaceType : baseInterfaceType;
-    let portId = '';
-    let interfaceName = '';
-    
-    if (portNaming === 'simple') {
-        portId = `0/${portNum}`;
-        interfaceName = `${type}0/${portNum}`;
-        if (stackSize > 1) { 
-            portId = `${stackMember}/0/${portNum}`;
-            interfaceName = `${type}${stackMember}/0/${portNum}`;
-        }
-    } else {
-        portId = `${stackMember}/0/${portNum}`;
-        interfaceName = `${type}${stackMember}/0/${portNum}`;
-    }
-
-    if (existingMap.has(portId)) {
-        const existing = existingMap.get(portId);
-        return { ...existing, name: interfaceName, isUplink }; 
-    } else {
-        return {
-            id: portId,
-            name: interfaceName,
-            description: isUplink ? 'Uplink' : '',
-            mode: isUplink ? 'trunk' : 'access', 
-            accessVlan: '', 
-            trunkVlans: 'all',
-            nativeVlan: 1,
-            portfast: !isUplink, 
-            voiceVlan: '',
-            includeInConfig: !isUplink, 
-            isUplink: isUplink,
-            noShutdown: true,
-            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-        };
-    }
-  };
+  // When ports array changes or initialized, ensure we have a valid singleEditPortId
+  useEffect(() => {
+      if (ports.length > 0 && !singleEditPortId) {
+          setSingleEditPortId(ports[0].id);
+      }
+  }, [ports, singleEditPortId]);
 
   // --- 6. MEMOS & HANDLERS ---
 
@@ -389,6 +440,14 @@ export default function CiscoConfigGenerator() {
               activeOnPorts.add(p.accessVlan);
               allVlans.add(p.accessVlan); 
           }
+          // Now also parse trunk VLANs
+          if (p.mode === 'trunk' && p.trunkVlans) {
+              const parsedTrunkVlans = parseVlanString(p.trunkVlans);
+              parsedTrunkVlans.forEach(v => {
+                  activeOnPorts.add(v);
+                  allVlans.add(v);
+              });
+          }
       });
       return Array.from(allVlans)
         .filter(v => v) // Remove empty/null values
@@ -396,12 +455,13 @@ export default function CiscoConfigGenerator() {
         .map(vlan => {
           const isDetected = detectedVlans.includes(vlan);
           const isUsed = activeOnPorts.has(vlan);
+          const name = vlanNames[vlan]; // Get Name from State
           let status = 'manual'; 
           if (isDetected && isUsed) status = 'used';
           else if (isDetected && !isUsed) status = 'unused'; 
-          return { id: vlan, status };
+          return { id: vlan, status, name };
       });
-  }, [detectedVlans, ports]);
+  }, [detectedVlans, ports, vlanNames]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
@@ -438,6 +498,11 @@ export default function CiscoConfigGenerator() {
       if (port.nativeVlan && port.nativeVlan != 1) lines.push(` switchport trunk native vlan ${port.nativeVlan}`);
     }
     
+    // PoE Configuration (Default is auto, so only write if different)
+    if (port.poeMode && port.poeMode !== 'auto') {
+        lines.push(` power inline ${port.poeMode}`);
+    }
+
     if (port.portfast) {
         lines.push(useModernPortfast ? ` spanning-tree portfast edge` : ` spanning-tree portfast`);
     }
@@ -470,6 +535,9 @@ export default function CiscoConfigGenerator() {
   // Handlers
   const updatePort = (id, field, value) => {
     if (['accessVlan', 'voiceVlan', 'nativeVlan'].includes(field)) {
+        if (!isNumeric(value)) return;
+    }
+    if (['secMax', 'secAgingTime'].includes(field)) {
         if (!isNumeric(value)) return;
     }
     if (field === 'trunkVlans') {
@@ -510,6 +578,16 @@ export default function CiscoConfigGenerator() {
       }
   };
 
+  const handleVisualizerClick = (id, e) => {
+      if (viewMode === 'multi') {
+        toggleSelection(id, e);
+      } else {
+        setSingleEditPortId(id);
+        // Also scroll preview
+        scrollToPreviewPort(id);
+      }
+  };
+
   const toggleSelection = (id, e) => {
     const newSet = new Set(selectedPortIds);
     const isShift = e && (e.shiftKey || (e.nativeEvent && e.nativeEvent.shiftKey));
@@ -545,7 +623,11 @@ export default function CiscoConfigGenerator() {
   };
 
   const selectPortsByVlan = (vlanId) => {
-    const matchingIds = ports.filter(p => p.accessVlan === vlanId && p.mode === 'access').map(p => p.id);
+    // If we are in single mode, switch to multi to show selection
+    if (viewMode === 'single') setViewMode('multi');
+    // Ensure string comparison for robustness
+    const strVlanId = String(vlanId);
+    const matchingIds = ports.filter(p => String(p.accessVlan) === strVlanId && p.mode === 'access').map(p => p.id);
     setSelectedPortIds(new Set(matchingIds));
     setLastSelectedId(null);
   };
@@ -569,6 +651,8 @@ export default function CiscoConfigGenerator() {
         if (bulkNoShut === 'on') newPort.noShutdown = true;
         if (bulkNoShut === 'off') newPort.noShutdown = false;
 
+        if (bulkPoeMode) newPort.poeMode = bulkPoeMode;
+
         if (bulkSecurity === 'on') newPort.portSecurity = true;
         if (bulkSecurity === 'off') newPort.portSecurity = false;
         if (bulkSecMax && isNumeric(bulkSecMax)) newPort.secMax = parseInt(bulkSecMax);
@@ -582,21 +666,14 @@ export default function CiscoConfigGenerator() {
     }));
   };
 
-  // --- REPLACED CLIPBOARD FUNCTION ---
   const copyToClipboard = () => {
-    // Fallback method using a temporary text area
-    // This is more robust for iFrames/Embeds where navigator.clipboard might be blocked
     const textArea = document.createElement("textarea");
     textArea.value = generatedConfig;
-    
-    // Ensure it's not visible but part of DOM
     textArea.style.position = "fixed";
     textArea.style.left = "-9999px";
     document.body.appendChild(textArea);
-    
     textArea.focus();
     textArea.select();
-    
     try {
       const successful = document.execCommand('copy');
       if(successful) showToast("Konfiguration kopiert!");
@@ -604,7 +681,6 @@ export default function CiscoConfigGenerator() {
     } catch (err) {
       showToast("Fehler beim Kopieren.");
     }
-    
     document.body.removeChild(textArea);
   };
 
@@ -621,6 +697,24 @@ export default function CiscoConfigGenerator() {
   };
 
   const selectedCount = selectedPortIds.size;
+  const singlePort = ports.find(p => p.id === singleEditPortId) || ports[0];
+  
+  // Helpers for Single Port View Navigation
+  const getPortIndex = (id) => ports.findIndex(p => p.id === id);
+  const handlePrevPort = () => {
+      const idx = getPortIndex(singleEditPortId);
+      if (idx > 0) {
+          setSingleEditPortId(ports[idx - 1].id);
+          scrollToPreviewPort(ports[idx - 1].id);
+      }
+  };
+  const handleNextPort = () => {
+      const idx = getPortIndex(singleEditPortId);
+      if (idx < ports.length - 1) {
+          setSingleEditPortId(ports[idx + 1].id);
+          scrollToPreviewPort(ports[idx + 1].id);
+      }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
@@ -750,7 +844,7 @@ export default function CiscoConfigGenerator() {
                     </div>
                 )}
             </div>
-            <div className="p-6 overflow-x-auto">
+            <div className="px-6 py-24 overflow-x-auto">
                 {Array.from({ length: stackSize }).map((_, stackIndex) => (
                     <div key={stackIndex} className="mb-6 last:mb-0">
                         {stackSize > 1 && <div className="text-xs font-bold text-slate-400 mb-1">Switch {stackIndex + 1}</div>}
@@ -772,20 +866,24 @@ export default function CiscoConfigGenerator() {
                                         const isTrunk = portData.mode === 'trunk';
                                         const isActive = portData.accessVlan || portData.description;
                                         const isIncluded = portData.includeInConfig;
+                                        const isCurrentSingle = viewMode === 'single' && singleEditPortId === portData.id;
+                                        const isPoe = portData.poeMode !== 'never';
 
                                         return (
-                                            <div key={portNum} className="group relative" onClick={(e) => toggleSelection(portData.id, e)}>
-                                                <div className={`w-8 h-6 rounded-sm border-t-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
+                                            <div key={portNum} className="group relative" onClick={(e) => handleVisualizerClick(portData.id, e)}>
+                                                <div className={`w-8 h-6 rounded-sm border-t-2 ${!isIncluded ? 'opacity-30' : ''} ${isCurrentSingle ? 'ring-2 ring-white ring-offset-2 ring-offset-blue-600 z-10' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
                                                     {portData.voiceVlan && <div className="absolute -bottom-1 -right-1 w-2 h-2 bg-purple-400 rounded-full border border-slate-800"></div>}
                                                     {portData.portSecurity && <div className="absolute -bottom-1 -left-1 w-2 h-2 bg-red-500 rounded-full border border-slate-800"></div>}
+                                                    {isPoe && <Zap size={8} className="absolute top-0.5 right-0.5 text-yellow-300 opacity-80" fill="currentColor" />}
                                                 </div>
-                                                <div className="text-[9px] text-slate-400 text-center font-mono mt-0.5">{portNum}</div>
+                                                <div className={`text-[9px] text-center font-mono mt-0.5 ${isCurrentSingle ? 'text-white font-bold' : 'text-slate-400'}`}>{portNum}</div>
                                                 {/* Tooltip */}
                                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 bg-black text-white text-xs rounded p-2 z-10 pointer-events-none">
                                                     <div className="font-bold">{portData.name}</div>
                                                     <div>Mode: {portData.mode}</div>
                                                     {portData.mode === 'access' && <div>VLAN: {portData.accessVlan || '1'}</div>}
                                                     {portData.portSecurity && <div className="text-red-300">Security: On (Max {portData.secMax})</div>}
+                                                    <div className={isPoe ? "text-yellow-300" : "text-slate-500"}>PoE: {portData.poeMode}</div>
                                                 </div>
                                             </div>
                                         );
@@ -805,13 +903,24 @@ export default function CiscoConfigGenerator() {
                                         const isTrunk = portData.mode === 'trunk';
                                         const isActive = portData.accessVlan || portData.description;
                                         const isIncluded = portData.includeInConfig;
+                                        const isCurrentSingle = viewMode === 'single' && singleEditPortId === portData.id;
+                                        const isPoe = portData.poeMode !== 'never';
 
                                         return (
-                                            <div key={portNum} className="group relative" onClick={(e) => toggleSelection(portData.id, e)}>
-                                                <div className="text-[9px] text-slate-400 text-center font-mono mb-0.5">{portNum}</div>
-                                                <div className={`w-8 h-6 rounded-sm border-b-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
+                                            <div key={portNum} className="group relative" onClick={(e) => handleVisualizerClick(portData.id, e)}>
+                                                <div className={`text-[9px] text-center font-mono mb-0.5 ${isCurrentSingle ? 'text-white font-bold' : 'text-slate-400'}`}>{portNum}</div>
+                                                <div className={`w-8 h-6 rounded-sm border-b-2 ${!isIncluded ? 'opacity-30' : ''} ${isCurrentSingle ? 'ring-2 ring-white ring-offset-2 ring-offset-blue-600 z-10' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-500 border-orange-300' : isActive ? 'bg-green-500 border-green-300' : 'bg-slate-600 border-slate-500'} shadow-md transition-all hover:brightness-110 cursor-pointer relative`}>
                                                     {portData.voiceVlan && <div className="absolute -top-1 -right-1 w-2 h-2 bg-purple-400 rounded-full border border-slate-800"></div>}
                                                     {portData.portSecurity && <div className="absolute -top-1 -left-1 w-2 h-2 bg-red-500 rounded-full border border-slate-800"></div>}
+                                                    {isPoe && <Zap size={8} className="absolute bottom-0.5 right-0.5 text-yellow-300 opacity-80" fill="currentColor" />}
+                                                </div>
+                                                {/* Tooltip for Bottom Row */}
+                                                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 hidden group-hover:block w-48 bg-black text-white text-xs rounded p-2 z-10 pointer-events-none">
+                                                    <div className="font-bold">{portData.name}</div>
+                                                    <div>Mode: {portData.mode}</div>
+                                                    {portData.mode === 'access' && <div>VLAN: {portData.accessVlan || '1'}</div>}
+                                                    {portData.portSecurity && <div className="text-red-300">Security: On (Max {portData.secMax})</div>}
+                                                    <div className={isPoe ? "text-yellow-300" : "text-slate-500"}>PoE: {portData.poeMode}</div>
                                                 </div>
                                             </div>
                                         );
@@ -837,13 +946,14 @@ export default function CiscoConfigGenerator() {
                                         const isTrunk = portData.mode === 'trunk';
                                         const isActive = portData.accessVlan || portData.description;
                                         const isIncluded = portData.includeInConfig;
+                                        const isCurrentSingle = viewMode === 'single' && singleEditPortId === portData.id;
 
                                         return (
-                                            <div key={portNum} className="group relative flex flex-col items-center justify-center" onClick={(e) => toggleSelection(portData.id, e)}>
-                                                <div className={`w-6 h-6 rounded-md border-2 ${!isIncluded ? 'opacity-30' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-900 border-orange-500' : isActive ? 'bg-green-900 border-green-500' : 'bg-slate-800 border-slate-500'} shadow-inner cursor-pointer flex items-center justify-center`}>
+                                            <div key={portNum} className="group relative flex flex-col items-center justify-center" onClick={(e) => handleVisualizerClick(portData.id, e)}>
+                                                <div className={`w-6 h-6 rounded-md border-2 ${!isIncluded ? 'opacity-30' : ''} ${isCurrentSingle ? 'ring-2 ring-white ring-offset-2 ring-offset-blue-600 z-10' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-900 border-orange-500' : isActive ? 'bg-green-900 border-green-500' : 'bg-slate-800 border-slate-500'} shadow-inner cursor-pointer flex items-center justify-center`}>
                                                     <div className="w-2 h-1 bg-black rounded-full opacity-50"></div>
                                                 </div>
-                                                <div className="text-[8px] text-slate-400 font-mono mt-1">{portNum}</div>
+                                                <div className={`text-[8px] font-mono mt-1 ${isCurrentSingle ? 'text-white font-bold' : 'text-slate-400'}`}>{portNum}</div>
                                                 
                                                 {/* Tooltip for Uplink */}
                                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-32 bg-black text-white text-xs rounded p-2 z-10 pointer-events-none">
@@ -864,18 +974,36 @@ export default function CiscoConfigGenerator() {
         {/* EDITOR & PREVIEW SPLIT */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* LEFT: CONFIG TABLE */}
+            {/* LEFT: CONFIG AREA */}
             <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[800px] relative">
+                
+                {/* HEADER AREA */}
                 <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-3">
                     <div className="flex justify-between items-center">
                         <h2 className="font-semibold text-slate-700 flex items-center gap-2">
                             <Activity size={18} />
                             Port Configuration
                         </h2>
-                        <span className="text-xs text-slate-400">Total Ports: {ports.length}</span>
+                        
+                        {/* VIEW TOGGLE */}
+                        <div className="bg-white border border-slate-200 rounded-lg p-1 flex shadow-sm">
+                            <button 
+                                onClick={() => setViewMode('multi')}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${viewMode === 'multi' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                Multiport Editor
+                            </button>
+                            <button 
+                                onClick={() => setViewMode('single')}
+                                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${viewMode === 'single' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                Single Port Editor
+                            </button>
+                        </div>
                     </div>
-                    
-                    {availableVlans.length > 0 && (
+
+                    {/* VLAN LEGEND (Only show in Multi for now or both) */}
+                    {viewMode === 'multi' && availableVlans.length > 0 && (
                         <div>
                             <div className="flex items-center gap-2 text-xs animate-in fade-in">
                                 <span className="text-slate-400 flex items-center gap-1"><Filter size={12}/> VLANs:</span>
@@ -883,24 +1011,21 @@ export default function CiscoConfigGenerator() {
                                     {availableVlans.map(vlanObj => {
                                         let styleClass = "bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border-slate-200";
                                         let title = `VLAN ${vlanObj.id} (Detected & Used)`;
+                                        if (vlanObj.status === 'unused') { styleClass = "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"; }
+                                        else if (vlanObj.status === 'manual') { styleClass = "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"; }
                                         
-                                        if (vlanObj.status === 'unused') {
-                                            styleClass = "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200";
-                                            title = `VLAN ${vlanObj.id} (Defined but NOT used)`;
-                                        } else if (vlanObj.status === 'manual') {
-                                            styleClass = "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200";
-                                            title = `VLAN ${vlanObj.id} (Manual/New)`;
-                                        }
+                                        // Dynamic tooltip: Name or default
+                                        const tooltip = vlanObj.name 
+                                            ? `VLAN ${vlanObj.id}: ${vlanObj.name}`
+                                            : title;
 
                                         return (
                                             <button 
-                                                key={vlanObj.id}
-                                                onClick={() => selectPortsByVlan(vlanObj.id)}
-                                                className={`border px-2 py-0.5 rounded-full transition-colors font-mono cursor-pointer flex items-center gap-1 ${styleClass}`}
-                                                title={title}
+                                                key={vlanObj.id} 
+                                                onClick={() => selectPortsByVlan(vlanObj.id)} 
+                                                className={`border px-2 py-0.5 rounded-full transition-colors font-mono cursor-pointer flex items-center gap-1 ${styleClass}`} 
+                                                title={tooltip}
                                             >
-                                                {vlanObj.status === 'manual' && <PlusCircle size={8} className="text-indigo-400" />}
-                                                {vlanObj.status === 'unused' && <AlertCircle size={8} className="text-orange-400" />}
                                                 {vlanObj.id}
                                             </button>
                                         );
@@ -908,7 +1033,7 @@ export default function CiscoConfigGenerator() {
                                 </div>
                             </div>
                             
-                            {/* Legend */}
+                            {/* Legend - Restored */}
                             <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
                                 <div className="flex items-center gap-1">
                                     <div className="w-2 h-2 rounded-full bg-slate-200 border border-slate-300"></div>
@@ -927,295 +1052,439 @@ export default function CiscoConfigGenerator() {
                     )}
                 </div>
 
-                {/* BULK EDIT TOOLBAR */}
-                {selectedCount > 0 && (
-                    <div className="bg-blue-900 text-white p-3 shadow-md flex flex-col gap-3 z-20 border-b border-blue-800 animate-in slide-in-from-top-2">
-                        {/* Top Bar: Main Actions */}
-                        <div className="flex flex-wrap items-center gap-3">
-                            <div className="flex items-center gap-2 border-r border-blue-700 pr-4 mr-1">
-                                <span className="bg-blue-600 text-xs font-bold px-2 py-1 rounded-full">{selectedCount}</span>
-                                <span className="text-sm font-semibold whitespace-nowrap">Selected</span>
-                                <button onClick={() => setSelectedPortIds(new Set())} className="text-blue-300 hover:text-white"><X size={14}/></button>
-                            </div>
-
-                            <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkMode} onChange={(e) => setBulkMode(e.target.value)}>
-                                <option value="">Mode (No Change)</option>
-                                <option value="access">Access</option>
-                                <option value="trunk">Trunk</option>
-                            </select>
-
-                            <input 
-                                type="text" 
-                                maxLength={4}
-                                placeholder="VLAN..." 
-                                className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 w-16 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" 
-                                value={bulkAccessVlan} 
-                                onChange={(e) => isNumeric(e.target.value) && setBulkAccessVlan(e.target.value)}
-                            />
-
-                            <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkVoiceVlan} onChange={(e) => setBulkVoiceVlan(e.target.value)}>
-                                <option value="">Voice (No Change)</option>
-                                <option value="enable">Enable Global</option>
-                                <option value="disable">Disable Voice</option>
-                            </select>
-
-                            <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkPortfast} onChange={(e) => setBulkPortfast(e.target.value)}>
-                                <option value="no_change">Fast (No Change)</option>
-                                <option value="on">Enable PortFast</option>
-                                <option value="off">Disable PortFast</option>
-                            </select>
-
-                            <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkInclude} onChange={(e) => setBulkInclude(e.target.value)}>
-                                <option value="no_change">Cfg (No Change)</option>
-                                <option value="include">Include</option>
-                                <option value="exclude">Exclude</option>
-                            </select>
-
-                            <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkNoShut} onChange={(e) => setBulkNoShut(e.target.value)}>
-                                <option value="no_change">Power (No Change)</option>
-                                <option value="on">No Shutdown</option>
-                                <option value="off">Shutdown</option>
-                            </select>
-
-                            <div className="flex-1"></div>
-                            
-                            <button onClick={() => setShowSecurityOptions(!showSecurityOptions)} className={`flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded transition ${showSecurityOptions ? 'bg-indigo-600 text-white' : 'bg-blue-800 text-blue-200 hover:bg-blue-700'}`}>
-                                <Lock size={12}/> Advanced Sec {showSecurityOptions ? '▼' : '▶'}
-                            </button>
-
-                            <button onClick={applyBulkEdit} className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 px-4 rounded transition shadow-lg flex items-center gap-2">
-                                <Edit3 size={14} /> Apply
-                            </button>
-                        </div>
-
-                        {/* Security Options Sub-Bar */}
-                        {showSecurityOptions && (
-                            <div className="flex flex-wrap items-center gap-3 bg-blue-800/50 p-2 rounded border border-blue-700/50 animate-in fade-in">
-                                <span className="text-xs font-bold text-blue-200 uppercase tracking-wide flex items-center gap-1"><Shield size={12}/> Port Security:</span>
-                                
-                                <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecurity} onChange={(e) => setBulkSecurity(e.target.value)}>
-                                    <option value="no_change">Enable/Disable</option>
-                                    <option value="on">Enable Security</option>
-                                    <option value="off">Disable Security</option>
-                                </select>
-
-                                <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecSticky} onChange={(e) => setBulkSecSticky(e.target.value)}>
-                                    <option value="no_change">MAC Mode</option>
-                                    <option value="off">Dynamic (RAM)</option>
-                                    <option value="on">Sticky (Config)</option>
-                                </select>
-
-                                <input 
-                                    type="text" 
-                                    placeholder="Max MACs (e.g. 2)" 
-                                    className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 w-32 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" 
-                                    value={bulkSecMax} 
-                                    onChange={(e) => isNumeric(e.target.value) && setBulkSecMax(e.target.value)}
-                                />
-
-                                <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecViolation} onChange={(e) => setBulkSecViolation(e.target.value)}>
-                                    <option value="">Violation Mode</option>
-                                    <option value="shutdown">Shutdown</option>
-                                    <option value="restrict">Restrict</option>
-                                    <option value="protect">Protect</option>
-                                </select>
-
-                                <div className="h-4 w-px bg-blue-600 mx-1"></div>
-
-                                <input 
-                                    type="text" 
-                                    placeholder="Aging (min)" 
-                                    className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 w-24 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" 
-                                    value={bulkSecAgingTime} 
-                                    onChange={(e) => isNumeric(e.target.value) && setBulkSecAgingTime(e.target.value)}
-                                />
-                                <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecAgingType} onChange={(e) => setBulkSecAgingType(e.target.value)}>
-                                    <option value="">Aging Type</option>
-                                    <option value="inactivity">Inactivity</option>
-                                    <option value="absolute">Absolute</option>
-                                </select>
-                            </div>
-                        )}
-                    </div>
-                )}
-                
-                <div className="flex-1 overflow-auto">
-                    <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
-                            <tr>
-                                <th className="p-2 w-8 text-center bg-slate-100">
-                                    <input 
-                                        type="checkbox" 
-                                        className="w-4 h-4 rounded border-gray-300" 
-                                        checked={selectedPortIds.size === ports.length && ports.length > 0}
-                                        onChange={toggleSelectAll}
-                                    />
-                                </th>
-                                <th className="p-2 font-medium w-28 bg-slate-50">Port</th>
-                                <th className="p-2 font-medium w-36 bg-slate-50">Description</th>
-                                <th className="p-2 font-medium w-56 bg-slate-50">Mode</th>
-                                <th className="p-2 font-medium w-24 bg-slate-50">VLAN</th>
-                                <th className="p-2 font-medium w-24 text-center bg-slate-50" title="PortFast">Fast</th>
-                                <th className="p-2 font-medium w-24 text-center bg-slate-50" title="Port Security">Sec</th>
-                                <th className="p-2 font-medium bg-slate-50">Extra (Voice/Native)</th>
-                                <th className="p-2 font-medium bg-slate-50 w-16 text-center" title="Include in Config">Cfg</th>
-                                <th className="p-2 font-medium bg-slate-50 w-16 text-center" title="No Shutdown">Pwr</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {ports.map((port) => (
-                                <tr key={port.id} id={`row-${port.id}`} className={`${!port.includeInConfig ? 'opacity-40 grayscale bg-slate-50' : ''} ${selectedPortIds.has(port.id) ? 'bg-yellow-50 hover:bg-yellow-100' : 'hover:bg-blue-50'} transition-all group`}>
-                                    <td className="p-2 text-center">
-                                        <input 
-                                            type="checkbox" 
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
-                                            checked={selectedPortIds.has(port.id)}
-                                            onChange={(e) => toggleSelection(port.id, e)}
-                                        />
-                                    </td>
-                                    <td className="p-2 font-mono text-xs font-bold text-slate-600 whitespace-nowrap">
-                                        <div className="flex flex-col">
-                                            <span>{port.name}</span>
-                                            {port.isUplink && (
-                                                <span className="w-max mt-1 px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[9px] rounded uppercase leading-none">
-                                                    SFP
-                                                </span>
-                                            )}
+                {/* CONTENT AREA: MULTI TABLE OR SINGLE FORM */}
+                <div className="flex-1 overflow-auto bg-slate-50/50">
+                    
+                    {/* MODE: MULTIPORT TABLE */}
+                    {viewMode === 'multi' && (
+                        <>
+                            {/* BULK EDIT TOOLBAR */}
+                            {selectedCount > 0 && (
+                                <div className="bg-blue-900 text-white p-3 shadow-md flex flex-col gap-3 sticky top-0 z-20 border-b border-blue-800 animate-in slide-in-from-top-2">
+                                     <div className="flex flex-wrap items-center gap-3">
+                                        <div className="flex items-center gap-2 border-r border-blue-700 pr-4 mr-1">
+                                            <span className="bg-blue-600 text-xs font-bold px-2 py-1 rounded-full">{selectedCount}</span>
+                                            <span className="text-sm font-semibold whitespace-nowrap">Selected</span>
+                                            <button onClick={() => setSelectedPortIds(new Set())} className="text-blue-300 hover:text-white"><X size={14}/></button>
                                         </div>
-                                    </td>
-                                    <td className="p-2">
-                                        <input 
-                                            type="text" 
-                                            placeholder="Description..." 
-                                            className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none transition-colors text-slate-700"
-                                            value={port.description}
-                                            onChange={(e) => updatePort(port.id, 'description', e.target.value)}
-                                            onFocus={() => scrollToPreviewPort(port.id)}
-                                            disabled={!port.includeInConfig}
-                                        />
-                                    </td>
-                                    <td className="p-2">
-                                        <select 
-                                            className="w-full bg-slate-100 border-none rounded h-8 pl-2 pr-8 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-200"
-                                            value={port.mode}
-                                            onChange={(e) => updatePort(port.id, 'mode', e.target.value)}
-                                            onFocus={() => scrollToPreviewPort(port.id)}
-                                            disabled={!port.includeInConfig}
-                                        >
+                                        <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkMode} onChange={(e) => setBulkMode(e.target.value)}>
+                                            <option value="">Mode (No Change)</option>
                                             <option value="access">Access</option>
                                             <option value="trunk">Trunk</option>
                                         </select>
-                                    </td>
-                                    <td className="p-2">
-                                        {port.mode === 'access' ? (
-                                            <input 
-                                                type="text" 
-                                                maxLength={4}
-                                                placeholder="1"
-                                                className="w-full p-1 border border-slate-200 rounded text-center"
-                                                value={port.accessVlan}
-                                                onChange={(e) => updatePort(port.id, 'accessVlan', e.target.value)}
-                                                onFocus={() => scrollToPreviewPort(port.id)}
-                                                disabled={!port.includeInConfig}
-                                            />
-                                        ) : (
-                                            <input 
-                                                type="text" 
-                                                placeholder="All"
-                                                className="w-full p-1 border border-slate-200 rounded text-xs"
-                                                value={port.trunkVlans}
-                                                onChange={(e) => updatePort(port.id, 'trunkVlans', e.target.value)}
-                                                onFocus={() => scrollToPreviewPort(port.id)}
-                                                disabled={!port.includeInConfig}
-                                            />
-                                        )}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                        <input 
-                                            type="checkbox" 
-                                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" 
-                                            checked={port.portfast} 
-                                            onChange={(e) => updatePort(port.id, 'portfast', e.target.checked)} 
-                                            onFocus={() => scrollToPreviewPort(port.id)}
-                                            disabled={!port.includeInConfig}
-                                        />
-                                    </td>
-                                    <td className="p-2 text-center">
-                                         {port.mode === 'access' && (
-                                            <input 
-                                                type="checkbox" 
-                                                className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-gray-300" 
-                                                checked={port.portSecurity} 
-                                                onChange={(e) => updatePort(port.id, 'portSecurity', e.target.checked)} 
-                                                onFocus={() => scrollToPreviewPort(port.id)}
-                                                disabled={!port.includeInConfig}
-                                            />
-                                         )}
-                                    </td>
-                                    <td className="p-2">
-                                        {port.mode === 'access' ? (
-                                            <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="checkbox" 
-                                                    className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" 
-                                                    title="Enable Voice VLAN" 
-                                                    checked={!!port.voiceVlan} 
-                                                    onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)} 
-                                                    onFocus={() => scrollToPreviewPort(port.id)}
-                                                    disabled={!port.includeInConfig}
-                                                />
-                                                {port.voiceVlan ? (
-                                                     <input 
-                                                        type="text" 
-                                                        maxLength={4}
-                                                        className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" 
-                                                        value={port.voiceVlan} 
-                                                        onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} 
-                                                        onFocus={() => scrollToPreviewPort(port.id)}
-                                                        disabled={!port.includeInConfig}
-                                                    />
+                                        <input type="text" maxLength={4} placeholder="VLAN..." className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 w-16 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" value={bulkAccessVlan} onChange={(e) => isNumeric(e.target.value) && setBulkAccessVlan(e.target.value)} />
+                                        <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkPoeMode} onChange={(e) => setBulkPoeMode(e.target.value)}>
+                                            <option value="">PoE (No Change)</option>
+                                            <option value="auto">Auto</option>
+                                            <option value="static">Static</option>
+                                            <option value="never">Never (Off)</option>
+                                        </select>
+                                        <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkVoiceVlan} onChange={(e) => setBulkVoiceVlan(e.target.value)}>
+                                            <option value="">Voice (No Change)</option>
+                                            <option value="enable">Enable Global</option>
+                                            <option value="disable">Disable Voice</option>
+                                        </select>
+                                        <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkPortfast} onChange={(e) => setBulkPortfast(e.target.value)}>
+                                            <option value="no_change">Fast (No Change)</option>
+                                            <option value="on">Enable PortFast</option>
+                                            <option value="off">Disable PortFast</option>
+                                        </select>
+                                        <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkInclude} onChange={(e) => setBulkInclude(e.target.value)}>
+                                            <option value="no_change">Cfg (No Change)</option>
+                                            <option value="include">Include</option>
+                                            <option value="exclude">Exclude</option>
+                                        </select>
+                                        <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkNoShut} onChange={(e) => setBulkNoShut(e.target.value)}>
+                                            <option value="no_change">State (No Change)</option>
+                                            <option value="on">No Shutdown</option>
+                                            <option value="off">Shutdown</option>
+                                        </select>
+                                        <div className="flex-1"></div>
+                                        <button onClick={() => setShowSecurityOptions(!showSecurityOptions)} className={`flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded transition ${showSecurityOptions ? 'bg-indigo-600 text-white' : 'bg-blue-800 text-blue-200 hover:bg-blue-700'}`}>
+                                            <Lock size={12}/> Advanced Sec {showSecurityOptions ? '▼' : '▶'}
+                                        </button>
+                                        <button onClick={applyBulkEdit} className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 px-4 rounded transition shadow-lg flex items-center gap-2">
+                                            <Edit3 size={14} /> Apply
+                                        </button>
+                                    </div>
+                                    {showSecurityOptions && (
+                                        <div className="flex flex-wrap items-center gap-3 bg-blue-800/50 p-2 rounded border border-blue-700/50 animate-in fade-in">
+                                            <span className="text-xs font-bold text-blue-200 uppercase tracking-wide flex items-center gap-1"><Shield size={12}/> Port Security:</span>
+                                            <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecurity} onChange={(e) => setBulkSecurity(e.target.value)}>
+                                                <option value="no_change">Enable/Disable</option>
+                                                <option value="on">Enable Security</option>
+                                                <option value="off">Disable Security</option>
+                                            </select>
+                                            <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecSticky} onChange={(e) => setBulkSecSticky(e.target.value)}>
+                                                <option value="no_change">MAC Mode</option>
+                                                <option value="off">Dynamic (RAM)</option>
+                                                <option value="on">Sticky (Config)</option>
+                                            </select>
+                                            <input type="text" placeholder="Max MACs (e.g. 2)" className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 w-32 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" value={bulkSecMax} onChange={(e) => isNumeric(e.target.value) && setBulkSecMax(e.target.value)} />
+                                            <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecViolation} onChange={(e) => setBulkSecViolation(e.target.value)}>
+                                                <option value="">Violation Mode</option>
+                                                <option value="shutdown">Shutdown</option>
+                                                <option value="restrict">Restrict</option>
+                                                <option value="protect">Protect</option>
+                                            </select>
+                                            <div className="h-4 w-px bg-blue-600 mx-1"></div>
+                                            <input type="text" placeholder="Aging (min)" className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 w-24 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" value={bulkSecAgingTime} onChange={(e) => isNumeric(e.target.value) && setBulkSecAgingTime(e.target.value)} />
+                                            <select className="bg-blue-900 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkSecAgingType} onChange={(e) => setBulkSecAgingType(e.target.value)}>
+                                                <option value="">Aging Type</option>
+                                                <option value="inactivity">Inactivity</option>
+                                                <option value="absolute">Absolute</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <table className="w-full text-left text-sm relative">
+                                <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="p-2 w-8 text-center bg-slate-100"><input type="checkbox" className="w-4 h-4 rounded border-gray-300" checked={selectedPortIds.size === ports.length && ports.length > 0} onChange={toggleSelectAll}/></th>
+                                        <th className="p-2 font-medium w-28 bg-slate-50">Port</th>
+                                        <th className="p-2 font-medium w-36 bg-slate-50">Description</th>
+                                        <th className="p-2 font-medium w-56 bg-slate-50">Mode</th>
+                                        <th className="p-2 font-medium w-24 bg-slate-50">VLAN</th>
+                                        <th className="p-2 font-medium w-24 text-center bg-slate-50" title="PortFast">Fast</th>
+                                        <th className="p-2 font-medium w-24 text-center bg-slate-50" title="Port Security">Sec</th>
+                                        <th className="p-2 font-medium bg-slate-50">Extra (Voice/Native)</th>
+                                        <th className="p-2 font-medium bg-slate-50 w-20 text-center">PoE</th>
+                                        <th className="p-2 font-medium bg-slate-50 w-16 text-center" title="Include in Config">Cfg</th>
+                                        <th className="p-2 font-medium bg-slate-50 w-16 text-center" title="No Shutdown">State</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {ports.map((port) => {
+                                        const isSelected = selectedPortIds.has(port.id);
+                                        // Dynamic class generation to ensure selection visibility over exclusion state
+                                        let rowClasses = "transition-all group border-b border-slate-100 ";
+                                        if (isSelected) {
+                                            rowClasses += "bg-yellow-50 hover:bg-yellow-100 ring-1 ring-inset ring-yellow-200 z-10 ";
+                                            if (!port.includeInConfig) rowClasses += "text-slate-500 "; // Dim text but keep yellow bg
+                                        } else {
+                                            if (!port.includeInConfig) {
+                                                rowClasses += "bg-slate-50 opacity-50 grayscale ";
+                                            } else {
+                                                rowClasses += "hover:bg-blue-50 ";
+                                            }
+                                        }
+
+                                        return (
+                                        <tr key={port.id} id={`row-${port.id}`} className={rowClasses}>
+                                            <td className="p-2 text-center">
+                                                <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked={isSelected} onChange={(e) => toggleSelection(port.id, e)}/>
+                                            </td>
+                                            <td className="p-2 font-mono text-xs font-bold text-slate-600 whitespace-nowrap">
+                                                <div className="flex flex-col">
+                                                    <span>{port.name}</span>
+                                                    {port.isUplink && <span className="w-max mt-1 px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[9px] rounded uppercase leading-none">SFP</span>}
+                                                </div>
+                                            </td>
+                                            <td className="p-2"><input type="text" placeholder="Description..." className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none transition-colors text-slate-700" value={port.description} onChange={(e) => updatePort(port.id, 'description', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></td>
+                                            <td className="p-2">
+                                                <select className="w-full bg-slate-100 border-none rounded h-8 pl-2 pr-8 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-200" value={port.mode} onChange={(e) => updatePort(port.id, 'mode', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}>
+                                                    <option value="access">Access</option>
+                                                    <option value="trunk">Trunk</option>
+                                                </select>
+                                            </td>
+                                            <td className="p-2">
+                                                {port.mode === 'access' ? (
+                                                    <input type="text" maxLength={4} placeholder="1" className="w-full p-1 border border-slate-200 rounded text-center" value={port.accessVlan} onChange={(e) => updatePort(port.id, 'accessVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
                                                 ) : (
-                                                    <span className="text-[10px] text-slate-300 italic">No Voice</span>
+                                                    <input type="text" placeholder="All" className="w-full p-1 border border-slate-200 rounded text-xs" value={port.trunkVlans} onChange={(e) => updatePort(port.id, 'trunkVlans', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
                                                 )}
-                                            </div>
-                                        ) : (
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[10px] text-slate-400">Native:</span>
+                                            </td>
+                                            <td className="p-2 text-center"><input type="checkbox" className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" checked={port.portfast} onChange={(e) => updatePort(port.id, 'portfast', e.target.checked)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></td>
+                                            <td className="p-2 text-center">{port.mode === 'access' && <input type="checkbox" className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-gray-300" checked={port.portSecurity} onChange={(e) => updatePort(port.id, 'portSecurity', e.target.checked)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>}</td>
+                                            <td className="p-2">
+                                                {port.mode === 'access' ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <input type="checkbox" className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" title="Enable Voice VLAN" checked={!!port.voiceVlan} onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
+                                                        {port.voiceVlan ? <input type="text" maxLength={4} className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/> : <span className="text-[10px] text-slate-300 italic">No Voice</span>}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-1"><span className="text-[10px] text-slate-400">Native:</span><input type="text" maxLength={4} className="w-12 p-1 text-xs border border-slate-200 rounded" value={port.nativeVlan} onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></div>
+                                                )}
+                                            </td>
+                                            <td className="p-2">
+                                                <select 
+                                                    className="w-full bg-slate-100 border-none rounded h-8 pl-1 pr-1 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-200"
+                                                    value={port.poeMode || 'auto'}
+                                                    onChange={(e) => updatePort(port.id, 'poeMode', e.target.value)}
+                                                    onFocus={() => scrollToPreviewPort(port.id)}
+                                                    disabled={!port.includeInConfig && !isSelected}
+                                                >
+                                                    <option value="auto">Auto</option>
+                                                    <option value="static">Static</option>
+                                                    <option value="never">Off</option>
+                                                </select>
+                                            </td>
+                                            <td className="p-2 text-center"><button onClick={() => toggleInclude(port.id)} className={`p-1.5 rounded-full transition-colors ${port.includeInConfig ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}><Power size={14} /></button></td>
+                                            <td className="p-2 text-center"><button onClick={() => toggleNoShut(port.id)} className={`p-1.5 rounded-full transition-colors ${port.noShutdown ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`} disabled={!port.includeInConfig && !isSelected}><Power size={14} /></button></td>
+                                        </tr>
+                                    )})}
+                                </tbody>
+                            </table>
+                        </>
+                    )}
+
+                    {/* MODE: SINGLE PORT EDITOR */}
+                    {viewMode === 'single' && singlePort && (
+                        <div className="p-6 max-w-2xl mx-auto space-y-6">
+                            {/* PORT NAVIGATION */}
+                            <div className="flex items-center justify-between bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <button onClick={handlePrevPort} className="p-2 rounded hover:bg-slate-100 text-slate-500"><ChevronLeft/></button>
+                                <div className="flex-1 px-4 flex flex-col gap-2">
+                                    <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select Interface</label>
+                                    <select 
+                                        className="w-full p-2 border border-slate-300 rounded bg-slate-50 font-mono text-sm font-bold text-blue-900"
+                                        value={singleEditPortId || ''}
+                                        onChange={(e) => {
+                                            setSingleEditPortId(e.target.value);
+                                            scrollToPreviewPort(e.target.value);
+                                        }}
+                                    >
+                                        {ports.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name} {p.description ? `(${p.description})` : ''}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button onClick={handleNextPort} className="p-2 rounded hover:bg-slate-100 text-slate-500"><ChevronRight/></button>
+                            </div>
+
+                            {/* MAIN CONFIG FORM */}
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-semibold text-slate-700 flex items-center gap-2">
+                                    <Edit3 size={16}/> General Configuration
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <div className="grid grid-cols-1 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-600">Description</label>
+                                            <input 
+                                                type="text" 
+                                                className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                value={singlePort.description}
+                                                onChange={(e) => updatePort(singlePort.id, 'description', e.target.value)}
+                                            />
+                                            <p className="text-[10px] text-slate-400">Name oder Funktion des angeschlossenen Geräts (z.B. 'Drucker-HR').</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-600">Switchport Mode</label>
+                                            <select 
+                                                className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                value={singlePort.mode}
+                                                onChange={(e) => updatePort(singlePort.id, 'mode', e.target.value)}
+                                            >
+                                                <option value="access">Access</option>
+                                                <option value="trunk">Trunk</option>
+                                            </select>
+                                            <p className="text-[10px] text-slate-400">Access für Endgeräte, Trunk für Switches/APs.</p>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-600">
+                                                {singlePort.mode === 'access' ? 'Access VLAN' : 'Allowed VLANs'}
+                                            </label>
+                                            {singlePort.mode === 'access' ? (
                                                 <input 
                                                     type="text" 
-                                                    maxLength={4}
-                                                    className="w-12 p-1 text-xs border border-slate-200 rounded" 
-                                                    value={port.nativeVlan} 
-                                                    onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} 
-                                                    onFocus={() => scrollToPreviewPort(port.id)}
-                                                    disabled={!port.includeInConfig}
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.accessVlan}
+                                                    onChange={(e) => updatePort(singlePort.id, 'accessVlan', e.target.value)}
                                                 />
+                                            ) : (
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.trunkVlans}
+                                                    onChange={(e) => updatePort(singlePort.id, 'trunkVlans', e.target.value)}
+                                                />
+                                            )}
+                                            <p className="text-[10px] text-slate-400">{singlePort.mode === 'access' ? 'VLAN-ID des Geräts (z.B. 10).' : 'Liste erlaubter VLANs (z.B. 10,20-30).'}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Extra VLANs */}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {singlePort.mode === 'access' && (
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-600">Voice VLAN</label>
+                                                <div className="flex gap-2">
+                                                    <input 
+                                                        type="text" 
+                                                        className="flex-1 p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        value={singlePort.voiceVlan}
+                                                        onChange={(e) => updatePort(singlePort.id, 'voiceVlan', e.target.value)}
+                                                        placeholder="None"
+                                                    />
+                                                </div>
+                                                <p className="text-[10px] text-slate-400">Separtes VLAN für VoIP-Telefone.</p>
                                             </div>
                                         )}
-                                    </td>
-                                    <td className="p-2 text-center">
-                                         <button 
-                                            onClick={() => toggleInclude(port.id)}
-                                            className={`p-1.5 rounded-full transition-colors ${port.includeInConfig ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}
-                                            title={port.includeInConfig ? "Included in config" : "Excluded from config"}
-                                         >
-                                            <Power size={14} />
-                                         </button>
-                                    </td>
-                                    <td className="p-2 text-center">
-                                        <button
-                                            onClick={() => toggleNoShut(port.id)}
-                                            className={`p-1.5 rounded-full transition-colors ${port.noShutdown ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`}
-                                            title={port.noShutdown ? "Port is UP (no shutdown)" : "Port is DOWN (shutdown)"}
-                                            disabled={!port.includeInConfig}
+                                        {singlePort.mode === 'trunk' && (
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-600">Native VLAN</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.nativeVlan}
+                                                    onChange={(e) => updatePort(singlePort.id, 'nativeVlan', e.target.value)}
+                                                />
+                                                <p className="text-[10px] text-slate-400">Ungetaggter Traffic (Standard: 1).</p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Toggles */}
+                                    <div className="pt-4 border-t border-slate-100 grid grid-cols-3 gap-4">
+                                        <label className="flex flex-col gap-1 cursor-pointer p-2 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition">
+                                            <div className="flex items-center gap-2">
+                                                <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" checked={singlePort.portfast} onChange={(e) => updatePort(singlePort.id, 'portfast', e.target.checked)} />
+                                                <span className="text-sm font-medium text-slate-700">PortFast</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 pl-6">Beschleunigt Link-Up. Nur für Endgeräte!</span>
+                                        </label>
+                                        <label className="flex flex-col gap-1 cursor-pointer p-2 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition">
+                                            <div className="flex items-center gap-2">
+                                                <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" checked={singlePort.noShutdown} onChange={(e) => toggleNoShut(singlePort.id)} />
+                                                <span className="text-sm font-medium text-slate-700">No Shutdown</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 pl-6">Aktiviert den Port (Strom an).</span>
+                                        </label>
+                                        <label className="flex flex-col gap-1 cursor-pointer p-2 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition">
+                                            <div className="flex items-center gap-2">
+                                                <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" checked={singlePort.includeInConfig} onChange={(e) => toggleInclude(singlePort.id)} />
+                                                <span className="text-sm font-medium text-slate-700">Include in Config</span>
+                                            </div>
+                                            <span className="text-[10px] text-slate-400 pl-6">Diesen Port in den Output aufnehmen.</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* POE CONFIG FORM */}
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-semibold text-slate-700 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Zap size={16} className="text-yellow-600"/> Power over Ethernet (PoE)
+                                    </div>
+                                </div>
+                                <div className="p-6 space-y-4">
+                                    <div className="space-y-1">
+                                        <label className="text-sm font-medium text-slate-600">Power Mode</label>
+                                        <select 
+                                            className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                            value={singlePort.poeMode || 'auto'}
+                                            onChange={(e) => updatePort(singlePort.id, 'poeMode', e.target.value)}
                                         >
-                                            <Power size={14} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                            <option value="auto">Auto (Default)</option>
+                                            <option value="static">Static (Pre-allocate Power)</option>
+                                            <option value="never">Never (Disable PoE)</option>
+                                        </select>
+                                        <p className="text-[10px] text-slate-400">
+                                            {singlePort.poeMode === 'never' ? 'PoE ist komplett deaktiviert (z.B. für Uplinks).' : 
+                                             singlePort.poeMode === 'static' ? 'Reserviert Leistung auch ohne Link.' : 
+                                             'Handelt Leistung automatisch aus (IEEE 802.3af/at).'}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* SECURITY CONFIG FORM */}
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-semibold text-slate-700 flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <Shield size={16}/> Security Configuration
+                                    </div>
+                                    <div className="flex items-center">
+                                        <span className="text-[10px] text-slate-400 mr-2 font-normal">Verhindert fremde Geräte.</span>
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <span className="text-xs font-bold text-slate-500 uppercase">Enable</span>
+                                            <div className={`w-10 h-5 rounded-full p-1 transition-colors ${singlePort.portSecurity ? 'bg-green-500' : 'bg-slate-300'}`}>
+                                                <div className={`bg-white w-3 h-3 rounded-full shadow-md transform transition-transform ${singlePort.portSecurity ? 'translate-x-5' : ''}`}></div>
+                                            </div>
+                                            <input type="checkbox" className="hidden" checked={singlePort.portSecurity} onChange={(e) => updatePort(singlePort.id, 'portSecurity', e.target.checked)} />
+                                        </label>
+                                    </div>
+                                </div>
+                                
+                                {singlePort.portSecurity && (
+                                    <div className="p-6 space-y-4 animate-in fade-in slide-in-from-top-2">
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-600">Max MAC Addresses</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.secMax}
+                                                    onChange={(e) => updatePort(singlePort.id, 'secMax', e.target.value)}
+                                                />
+                                                <p className="text-[10px] text-slate-400">Anzahl erlaubter Geräte.</p>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-600">Violation Mode</label>
+                                                <select 
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.secViolation}
+                                                    onChange={(e) => updatePort(singlePort.id, 'secViolation', e.target.value)}
+                                                >
+                                                    <option value="shutdown">Shutdown</option>
+                                                    <option value="restrict">Restrict</option>
+                                                    <option value="protect">Protect</option>
+                                                </select>
+                                                <p className="text-[10px] text-slate-400">Aktion bei unbefugtem Gerät (Shutdown = Port aus).</p>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-6">
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-600">Aging Time (min)</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.secAgingTime}
+                                                    onChange={(e) => updatePort(singlePort.id, 'secAgingTime', e.target.value)}
+                                                />
+                                                <p className="text-[10px] text-slate-400">Zeit bis inaktive MACs vergessen werden.</p>
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-600">Aging Type</label>
+                                                <select 
+                                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    value={singlePort.secAgingType}
+                                                    onChange={(e) => updatePort(singlePort.id, 'secAgingType', e.target.value)}
+                                                >
+                                                    <option value="inactivity">Inactivity</option>
+                                                    <option value="absolute">Absolute</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="pt-2">
+                                            <label className="flex flex-col gap-1 cursor-pointer p-2 rounded hover:bg-slate-50 border border-slate-200 transition bg-slate-50 w-max pr-6">
+                                                <div className="flex items-center gap-2">
+                                                    <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" checked={singlePort.secSticky} onChange={(e) => updatePort(singlePort.id, 'secSticky', e.target.checked)} />
+                                                    <span className="text-sm font-medium text-slate-700">MAC Address Sticky</span>
+                                                </div>
+                                                <span className="text-[10px] text-slate-400 pl-6">Lernt MACs automatisch fest in die Config.</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                )}
+                                {!singlePort.portSecurity && (
+                                    <div className="p-8 text-center text-slate-400 italic bg-slate-50/50">
+                                        Security is disabled for this port.
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -1281,9 +1550,9 @@ export default function CiscoConfigGenerator() {
                         Neue Funktionen ({APP_VERSION})
                     </h3>
                     <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                        <li><strong>Alt-Klick (Visualizer):</strong> Springe zur Zeile in der Tabelle (ohne Scrollen bei normalem Klick).</li>
-                        <li><strong>Click-to-Scroll (Tabelle):</strong> Klicke in ein Tabellenfeld, um die Vorschau automatisch an die richtige Stelle scrollen zu lassen.</li>
-                        <li><strong>Detected VLANs:</strong> Klicke auf erkannte VLANs, um alle zugehörigen Ports auszuwählen.</li>
+                        <li><strong>Visuelle Selektion korrigiert:</strong> Ausgewählte Ports sind nun auch sichtbar, wenn sie zuvor 'exkludiert' (ausgegraut) waren.</li>
+                        <li><strong>PoE Support:</strong> Power over Ethernet (Auto/Static/Never) konfigurierbar.</li>
+                        <li><strong>Single Port Editor:</strong> Detaillierte Bearbeitung inkl. erweiterten Sicherheitseinstellungen.</li>
                     </ul>
                 </div>
             </div>
