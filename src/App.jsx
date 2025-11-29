@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, Edit3, X, Power, Filter, Lock, CheckSquare, PlusCircle, AlertCircle, Info } from 'lucide-react';
+import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, Edit3, X, Power, Filter, Lock, CheckSquare, PlusCircle, AlertCircle, Info, RotateCcw } from 'lucide-react';
 
 export default function CiscoConfigGenerator() {
-  // --- State ---
+  // --- 1. STATE DEFINITIONS ---
   const [switchModel, setSwitchModel] = useState(48); 
   const [uplinkCount, setUplinkCount] = useState(4); 
   const [stackSize, setStackSize] = useState(1);
@@ -21,7 +21,7 @@ export default function CiscoConfigGenerator() {
   // Port Data Structure
   const [ports, setPorts] = useState([]);
   
-  // Detected VLANs from Upload (Static after upload)
+  // Detected VLANs from Upload
   const [detectedVlans, setDetectedVlans] = useState([]);
 
   // Toast Notification State
@@ -31,10 +31,10 @@ export default function CiscoConfigGenerator() {
   const [selectedPortIds, setSelectedPortIds] = useState(new Set());
   const [lastSelectedId, setLastSelectedId] = useState(null);
 
-  // Refs for Scrolling
+  // Refs
   const tableRefs = useRef({});
 
-  // Standard Bulk
+  // Bulk Values
   const [bulkMode, setBulkMode] = useState('');
   const [bulkAccessVlan, setBulkAccessVlan] = useState('');
   const [bulkVoiceVlan, setBulkVoiceVlan] = useState('');
@@ -54,119 +54,79 @@ export default function CiscoConfigGenerator() {
   // UI Toggles
   const [showSecurityOptions, setShowSecurityOptions] = useState(false);
 
-  // --- Regex Validators ---
+  // --- 2. HELPERS & VALIDATORS ---
   const isNumeric = (val) => /^\d*$/.test(val);
   const isVlanRange = (val) => /^[0-9,\-\s]*$/.test(val);
 
-  // --- Initialization & Updates ---
-
-  useEffect(() => {
-    generatePortList();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
-
-  const generatePortList = useCallback(() => {
-    setPorts(currentPorts => {
-        const currentPortsMap = new Map(currentPorts.map(p => [p.id, p]));
-        let newPorts = [];
-
-        for (let stackMember = 1; stackMember <= stackSize; stackMember++) {
-            for (let portNum = 1; portNum <= switchModel; portNum++) {
-                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, false));
-            }
-            for (let u = 1; u <= uplinkCount; u++) {
-                const portNum = switchModel + u;
-                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, true));
-            }
-        }
-        return newPorts;
-    });
-  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
-
-  const createPortObject = (existingMap, stackMember, portNum, isUplink) => {
-    let portId = '';
-    let interfaceName = '';
-    const type = isUplink ? uplinkInterfaceType : baseInterfaceType;
-    
-    if (portNaming === 'simple') {
-        portId = `0/${portNum}`;
-        interfaceName = `${type}0/${portNum}`;
-        if (stackSize > 1) { 
-            portId = `${stackMember}/0/${portNum}`;
-            interfaceName = `${type}${stackMember}/0/${portNum}`;
-        }
-    } else {
-        portId = `${stackMember}/0/${portNum}`;
-        interfaceName = `${type}${stackMember}/0/${portNum}`;
-    }
-
-    if (existingMap.has(portId)) {
-        const existing = existingMap.get(portId);
-        return { ...existing, name: interfaceName, isUplink }; 
-    } else {
-        return {
-            id: portId,
-            name: interfaceName,
-            description: isUplink ? 'Uplink' : '',
-            mode: isUplink ? 'trunk' : 'access', 
-            accessVlan: '', 
-            trunkVlans: 'all',
-            nativeVlan: 1,
-            portfast: !isUplink, 
-            voiceVlan: '',
-            includeInConfig: !isUplink, 
-            isUplink: isUplink,
-            noShutdown: true,
-            portSecurity: false,
-            secMax: 1,
-            secViolation: 'shutdown', 
-            secSticky: false,
-            secAgingTime: 0, 
-            secAgingType: 'inactivity'
-        };
-    }
+  const showToast = (msg) => {
+      setToast({ show: true, message: msg });
+      setTimeout(() => setToast({ show: false, message: '' }), 3000);
   };
 
-  // --- Dynamic VLAN List ---
-  const availableVlans = useMemo(() => {
-      const activeOnPorts = new Set();
-      const allVlans = new Set(detectedVlans);
-      ports.forEach(p => {
-          if (p.mode === 'access' && p.accessVlan) {
-              activeOnPorts.add(p.accessVlan);
-              allVlans.add(p.accessVlan); 
-          }
-      });
-      return Array.from(allVlans).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
-          const isDetected = detectedVlans.includes(vlan);
-          const isUsed = activeOnPorts.has(vlan);
-          let status = 'manual'; 
-          if (isDetected && isUsed) status = 'used';
-          else if (isDetected && !isUsed) status = 'unused'; 
-          return { id: vlan, status };
-      });
-  }, [detectedVlans, ports]);
+  // --- 3. CORE LOGIC FUNCTIONS ---
 
-  // --- Parsing Logic (Import) ---
+  // Rebuild Port List (Used by Parser & Updates)
+  // NOTE: This logic tries to preserve existing settings when resizing
+  const rebuildFromMap = (naming, stack, model, upCount, map, baseType, upType) => {
+    let mergedPorts = [];
+    for (let s = 1; s <= stack; s++) {
+      // Regular Ports
+      for (let p = 1; p <= model; p++) {
+        let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
+        if (naming === 'simple' && stack > 1) genId = `${s}/0/${p}`;
+        
+        const parsed = map.get(genId);
+        const name = parsed ? parsed.name : `${baseType}${genId}`; // Fallback Name
+        
+        if (parsed) {
+            mergedPorts.push({ ...parsed, name, isUplink: false });
+        } else {
+            mergedPorts.push({
+                id: genId, name, description: '', mode: 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1, 
+                portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false,
+                noShutdown: true,
+                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+            });
+        }
+      }
+      // Uplink Ports
+      for (let u = 1; u <= upCount; u++) {
+        let p = model + u;
+        let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
+        if (naming === 'simple' && stack > 1) genId = `${s}/0/${p}`;
+        
+        const parsed = map.get(genId);
+        const name = parsed ? parsed.name : `${upType}${genId}`;
 
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => parseRunningConfig(event.target.result);
-    reader.readAsText(file);
-    e.target.value = null; 
+        if (parsed) {
+            mergedPorts.push({ ...parsed, name, isUplink: true });
+        } else {
+            mergedPorts.push({
+                id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1, 
+                portfast: false, voiceVlan: '', 
+                includeInConfig: false,
+                isUplink: true,
+                noShutdown: true,
+                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+            });
+        }
+      }
+    }
+    setPorts(mergedPorts);
   };
 
+  // Parse Config Logic
   const parseRunningConfig = (text) => {
+    // 1. Hostname & Version (Safe extraction)
     const hostnameMatch = text.match(/^hostname\s+([^\s]+)/m);
-    if (hostnameMatch) setHostname(hostnameMatch[1]);
+    if (hostnameMatch && hostnameMatch[1]) setHostname(hostnameMatch[1]);
     else setHostname('');
 
     const versionMatch = text.match(/^version\s+(\d+\.?\d*)/m);
-    if (versionMatch) {
-        setIosVersion(versionMatch[1]);
-        if (parseFloat(versionMatch[1]) < 15.0) {
+    if (versionMatch && versionMatch[1]) {
+        const verStr = versionMatch[1];
+        setIosVersion(verStr);
+        if (parseFloat(verStr) < 15.0) {
              setUseModernPortfast(false);
         } else {
              setUseModernPortfast(true);
@@ -175,10 +135,9 @@ export default function CiscoConfigGenerator() {
         setIosVersion('');
     }
 
-    let detectedModern = true;
-    if (text.includes('spanning-tree portfast edge')) detectedModern = true;
-    else if (text.includes('spanning-tree portfast')) detectedModern = false;
-    setUseModernPortfast(detectedModern);
+    // Portfast Syntax Check
+    if (text.includes('spanning-tree portfast edge')) setUseModernPortfast(true);
+    else if (text.includes('spanning-tree portfast')) setUseModernPortfast(false);
 
     const lines = text.split('\n');
     let newPortsMap = new Map();
@@ -190,6 +149,7 @@ export default function CiscoConfigGenerator() {
     const voiceVlanCounts = {};
     const foundVlans = new Set();
 
+    // First Pass: Statistics
     lines.forEach(line => {
       const trimmed = line.trim();
       const match = trimmed.match(interfaceRegex);
@@ -206,11 +166,13 @@ export default function CiscoConfigGenerator() {
           if(v) foundVlans.add(v);
       }
       const sviMatch = trimmed.match(/^interface Vlan\s?(\d+)/i);
-      if (sviMatch) foundVlans.add(sviMatch[1]);
+      if (sviMatch && sviMatch[1]) foundVlans.add(sviMatch[1]);
+      
       const l2Match = trimmed.match(/^vlan\s+(\d+)/i);
-      if (l2Match) foundVlans.add(l2Match[1]);
+      if (l2Match && l2Match[1]) foundVlans.add(l2Match[1]);
     });
 
+    // Detect Types
     const sortedTypes = Object.entries(typeCounts).sort((a,b) => b[1] - a[1]);
     let detBase = sortedTypes[0]?.[0] || 'GigabitEthernet';
     let detUplink = sortedTypes[1]?.[0] || detBase;
@@ -224,17 +186,24 @@ export default function CiscoConfigGenerator() {
         return t;
     };
 
-    setBaseInterfaceType(expandType(detBase));
-    setUplinkInterfaceType(expandType(detUplink));
+    const finalBaseType = expandType(detBase);
+    const finalUplinkType = expandType(detUplink);
 
+    setBaseInterfaceType(finalBaseType);
+    setUplinkInterfaceType(finalUplinkType);
+
+    // Detect Voice VLAN
     let maxCount = 0;
     let detectedVoiceVlan = '';
     Object.entries(voiceVlanCounts).forEach(([vlan, count]) => {
       if (count > maxCount) { maxCount = count; detectedVoiceVlan = vlan; }
     });
     if (detectedVoiceVlan) setGlobalVoiceVlan(detectedVoiceVlan);
-    setDetectedVlans(Array.from(foundVlans).sort((a,b) => parseInt(a) - parseInt(b)));
+    
+    // Set Detected VLANs (Filter empty)
+    setDetectedVlans(Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)));
 
+    // Second Pass: Parse Interfaces
     let currentInterface = null;
     
     lines.forEach(line => {
@@ -242,11 +211,14 @@ export default function CiscoConfigGenerator() {
       const match = trimmed.match(interfaceRegex);
       
       if (match) {
+        // Save previous
         if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
+        
         const numbering = match[2]; 
         const parts = numbering.split('/');
-        let id = numbering;
+        let id = numbering; // Default ID
         
+        // Stack Logic
         if (parts.length === 3) {
             detectedNaming = 'stack';
             detectedStackSize = Math.max(detectedStackSize, parseInt(parts[0]));
@@ -308,63 +280,135 @@ export default function CiscoConfigGenerator() {
         }
       }
     });
+    // Save last
     if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
 
+    // Smart Auto-Detection
     let bestFitModel = 48;
-    let uplinks = 0;
-    if (detectedMaxPort <= 10) { bestFitModel = 8; uplinks = Math.max(0, detectedMaxPort - 8); }
-    else if (detectedMaxPort <= 14) { bestFitModel = 12; uplinks = Math.max(0, detectedMaxPort - 12); }
-    else if (detectedMaxPort <= 18) { bestFitModel = 16; uplinks = Math.max(0, detectedMaxPort - 16); }
-    else if (detectedMaxPort <= 28) { bestFitModel = 24; uplinks = Math.max(0, detectedMaxPort - 24); }
-    else { bestFitModel = 48; uplinks = Math.max(0, detectedMaxPort - 48); }
-    if (uplinks > 0 && uplinks <= 2) uplinks = 2;
-    if (uplinks > 2) uplinks = 4;
+    let uplinks = 4;
+
+    if (detectedMaxPort <= 8) { bestFitModel = 8; uplinks = 2; }
+    else if (detectedMaxPort <= 12) { bestFitModel = 12; uplinks = 2; }
+    else if (detectedMaxPort <= 16) { bestFitModel = 16; uplinks = 2; }
+    else if (detectedMaxPort <= 24) { bestFitModel = 24; uplinks = 4; }
+    else { bestFitModel = 48; uplinks = 4; }
 
     setPortNaming(detectedNaming);
     setStackSize(detectedStackSize);
     setSwitchModel(bestFitModel);
     setUplinkCount(uplinks);
     
-    rebuildFromMap(detectedNaming, detectedStackSize, bestFitModel, uplinks, newPortsMap, expandType(detBase), expandType(detUplink));
+    rebuildFromMap(detectedNaming, detectedStackSize, bestFitModel, uplinks, newPortsMap, finalBaseType, finalUplinkType);
   };
 
-  const rebuildFromMap = (naming, stack, model, upCount, map, baseType, upType) => {
-    let mergedPorts = [];
-    for (let s = 1; s <= stack; s++) {
-      for (let p = 1; p <= model; p++) {
-        let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
-        if (naming === 'simple' && stack > 1) genId = `${s}/0/${p}`;
-        const parsed = map.get(genId);
-        const name = parsed ? parsed.name : `${baseType}${genId}`;
-        
-        if (parsed) mergedPorts.push({ ...parsed, name, isUplink: false });
-        else mergedPorts.push({
-            id: genId, name, description: '', mode: 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1, 
-            portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false,
-            noShutdown: true,
-            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-        });
-      }
-      for (let u = 1; u <= upCount; u++) {
-        let p = model + u;
-        let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
-        if (naming === 'simple' && stack > 1) genId = `${s}/0/${p}`;
-        const parsed = map.get(genId);
-        const name = parsed ? parsed.name : `${upType}${genId}`;
-
-        if (parsed) mergedPorts.push({ ...parsed, name, isUplink: true });
-        else mergedPorts.push({
-            id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1, 
-            portfast: false, voiceVlan: '', includeInConfig: false, isUplink: true,
-            noShutdown: true,
-            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-        });
-      }
+  // --- 4. RESET FUNCTION (SIMPLE RELOAD) ---
+  const resetToDefaults = () => {
+    if (window.confirm("Möchtest du wirklich alles zurücksetzen? Die Seite wird neu geladen.")) {
+        window.location.reload();
     }
-    setPorts(mergedPorts);
   };
 
-  // --- Generator Helper for Single Port ---
+  // --- 5. INITIALIZATION & UPDATE EFFECTS ---
+
+  // Default Init (Only runs if no ports loaded initially)
+  useEffect(() => {
+    if (ports.length === 0) {
+        generatePortList();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
+
+  const generatePortList = useCallback(() => {
+    // This is the fallback generator if not using the parser flow
+    setPorts(currentPorts => {
+        const currentPortsMap = new Map(currentPorts.map(p => [p.id, p]));
+        let newPorts = [];
+
+        for (let stackMember = 1; stackMember <= stackSize; stackMember++) {
+            for (let portNum = 1; portNum <= switchModel; portNum++) {
+                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, false));
+            }
+            for (let u = 1; u <= uplinkCount; u++) {
+                const portNum = switchModel + u;
+                newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, true));
+            }
+        }
+        return newPorts;
+    });
+  }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
+
+  const createPortObject = (existingMap, stackMember, portNum, isUplink) => {
+    const type = isUplink ? uplinkInterfaceType : baseInterfaceType;
+    let portId = '';
+    let interfaceName = '';
+    
+    if (portNaming === 'simple') {
+        portId = `0/${portNum}`;
+        interfaceName = `${type}0/${portNum}`;
+        if (stackSize > 1) { 
+            portId = `${stackMember}/0/${portNum}`;
+            interfaceName = `${type}${stackMember}/0/${portNum}`;
+        }
+    } else {
+        portId = `${stackMember}/0/${portNum}`;
+        interfaceName = `${type}${stackMember}/0/${portNum}`;
+    }
+
+    if (existingMap.has(portId)) {
+        const existing = existingMap.get(portId);
+        return { ...existing, name: interfaceName, isUplink }; 
+    } else {
+        return {
+            id: portId,
+            name: interfaceName,
+            description: isUplink ? 'Uplink' : '',
+            mode: isUplink ? 'trunk' : 'access', 
+            accessVlan: '', 
+            trunkVlans: 'all',
+            nativeVlan: 1,
+            portfast: !isUplink, 
+            voiceVlan: '',
+            includeInConfig: !isUplink, 
+            isUplink: isUplink,
+            noShutdown: true,
+            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+        };
+    }
+  };
+
+  // --- 6. MEMOS & HANDLERS ---
+
+  const availableVlans = useMemo(() => {
+      const activeOnPorts = new Set();
+      const allVlans = new Set(detectedVlans);
+      ports.forEach(p => {
+          if (p.mode === 'access' && p.accessVlan) {
+              activeOnPorts.add(p.accessVlan);
+              allVlans.add(p.accessVlan); 
+          }
+      });
+      return Array.from(allVlans)
+        .filter(v => v) // Remove empty/null values
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .map(vlan => {
+          const isDetected = detectedVlans.includes(vlan);
+          const isUsed = activeOnPorts.has(vlan);
+          let status = 'manual'; 
+          if (isDetected && isUsed) status = 'used';
+          else if (isDetected && !isUsed) status = 'unused'; 
+          return { id: vlan, status };
+      });
+  }, [detectedVlans, ports]);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => parseRunningConfig(event.target.result);
+    reader.readAsText(file);
+    e.target.value = null; 
+  };
+
   const getPortConfigString = (port) => {
     let lines = [];
     lines.push(`interface ${port.name}`);
@@ -387,7 +431,7 @@ export default function CiscoConfigGenerator() {
       }
     } else if (port.mode === 'trunk') {
       lines.push(` switchport mode trunk`);
-      if (port.trunkVlans && port.trunkVlans !== 'all') lines.push(` switchport trunk allowed vlan ${port.trunkVlans}`);
+      if (port.trunkVlans && port.trunkVlans.toLowerCase() !== 'all') lines.push(` switchport trunk allowed vlan ${port.trunkVlans}`);
       if (port.nativeVlan && port.nativeVlan != 1) lines.push(` switchport trunk native vlan ${port.nativeVlan}`);
     }
     
@@ -406,7 +450,6 @@ export default function CiscoConfigGenerator() {
     return lines.join('\n');
   };
 
-  // --- Generator Logic (Memoized) ---
   const generatedConfig = useMemo(() => {
     let output = "! Generated Switchport Config\n";
     ports.forEach(port => {
@@ -421,14 +464,14 @@ export default function CiscoConfigGenerator() {
     return output;
   }, [ports, includeWrMem, useModernPortfast, includeNoShutdown]);
 
-  // --- Handlers ---
-  
+  // Handlers
   const updatePort = (id, field, value) => {
     if (['accessVlan', 'voiceVlan', 'nativeVlan'].includes(field)) {
         if (!isNumeric(value)) return;
     }
     if (field === 'trunkVlans') {
-        if (!isVlanRange(value)) return;
+        const lower = value.toLowerCase();
+        if (!isVlanRange(value) && !['a', 'al', 'all'].includes(lower)) return;
     }
     setPorts(ports.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
@@ -446,9 +489,6 @@ export default function CiscoConfigGenerator() {
     updatePort(id, 'voiceVlan', newVal);
   };
 
-  // --- Scroll & Selection Handlers ---
-  
-  // Scroll Helper
   const scrollToTablePort = (id) => {
       const el = document.getElementById(`row-${id}`);
       if (el) {
@@ -462,7 +502,6 @@ export default function CiscoConfigGenerator() {
       const el = document.getElementById(`preview-config-${id}`);
       if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Highlight logic for preview block
           el.classList.add('bg-slate-700'); 
           setTimeout(() => el.classList.remove('bg-slate-700'), 1500);
       }
@@ -473,7 +512,6 @@ export default function CiscoConfigGenerator() {
     const isShift = e && (e.shiftKey || (e.nativeEvent && e.nativeEvent.shiftKey));
     const isAlt = e && (e.altKey || (e.nativeEvent && e.nativeEvent.altKey));
 
-    // Only scroll to table if ALT is pressed
     if (isAlt && !newSet.has(id)) { 
         scrollToTablePort(id);
     }
@@ -528,7 +566,6 @@ export default function CiscoConfigGenerator() {
         if (bulkNoShut === 'on') newPort.noShutdown = true;
         if (bulkNoShut === 'off') newPort.noShutdown = false;
 
-        // Security Bulk Logic
         if (bulkSecurity === 'on') newPort.portSecurity = true;
         if (bulkSecurity === 'off') newPort.portSecurity = false;
         if (bulkSecMax && isNumeric(bulkSecMax)) newPort.secMax = parseInt(bulkSecMax);
@@ -542,13 +579,30 @@ export default function CiscoConfigGenerator() {
     }));
   };
 
-  const copyToClipboard = async () => {
+  // --- REPLACED CLIPBOARD FUNCTION ---
+  const copyToClipboard = () => {
+    // Fallback method using a temporary text area
+    // This is more robust for iFrames/Embeds where navigator.clipboard might be blocked
+    const textArea = document.createElement("textarea");
+    textArea.value = generatedConfig;
+    
+    // Ensure it's not visible but part of DOM
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    
+    textArea.focus();
+    textArea.select();
+    
     try {
-        await navigator.clipboard.writeText(generatedConfig);
-        showToast("Konfiguration in die Zwischenablage kopiert!");
+      const successful = document.execCommand('copy');
+      if(successful) showToast("Konfiguration kopiert!");
+      else showToast("Kopieren fehlgeschlagen.");
     } catch (err) {
-        alert("Fehler beim Kopieren: " + err);
+      showToast("Fehler beim Kopieren.");
     }
+    
+    document.body.removeChild(textArea);
   };
 
   const downloadFile = () => {
@@ -561,11 +615,6 @@ export default function CiscoConfigGenerator() {
     element.click();
     document.body.removeChild(element);
     URL.revokeObjectURL(url);
-  };
-
-  const showToast = (msg) => {
-      setToast({ show: true, message: msg });
-      setTimeout(() => setToast({ show: false, message: '' }), 3000);
   };
 
   const selectedCount = selectedPortIds.size;
@@ -581,12 +630,22 @@ export default function CiscoConfigGenerator() {
               <p className="text-blue-200 text-xs">Config Generator & Visualizer</p>
             </div>
           </div>
-          <div className="flex items-center gap-3 bg-blue-800 p-2 rounded-lg border border-blue-700">
-             <label className="flex items-center gap-2 cursor-pointer hover:bg-blue-700 px-3 py-1 rounded transition">
-                <Upload size={18} />
-                <span className="text-sm font-medium">Upload Running-Config</span>
-                <input type="file" accept=".txt,.cfg,.log" className="hidden" onChange={handleFileUpload} />
-             </label>
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={resetToDefaults}
+                className="flex items-center gap-2 px-3 py-1 bg-blue-800 hover:bg-blue-700 rounded-lg border border-blue-700 text-sm font-medium transition-colors text-blue-100"
+                title="Alles zurücksetzen"
+             >
+                <RotateCcw size={16} />
+                <span className="hidden sm:inline">Reset</span>
+             </button>
+             <div className="flex items-center gap-3 bg-blue-800 p-2 rounded-lg border border-blue-700">
+                <label className="flex items-center gap-2 cursor-pointer hover:bg-blue-700 px-3 py-1 rounded transition">
+                    <Upload size={18} />
+                    <span className="text-sm font-medium">Upload Running-Config</span>
+                    <input type="file" accept=".txt,.cfg,.log" className="hidden" onChange={handleFileUpload} />
+                </label>
+             </div>
           </div>
         </div>
       </header>
@@ -654,6 +713,7 @@ export default function CiscoConfigGenerator() {
                  <Phone size={12}/> Global Voice</label>
              <input 
                 type="text" 
+                maxLength={4}
                 className="w-full p-2 border border-blue-200 rounded-md bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none text-blue-900 font-bold placeholder-blue-300 text-sm" 
                 placeholder="e.g. 40" 
                 value={globalVoiceVlan} 
@@ -883,6 +943,7 @@ export default function CiscoConfigGenerator() {
 
                             <input 
                                 type="text" 
+                                maxLength={4}
                                 placeholder="VLAN..." 
                                 className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 w-16 placeholder-blue-400 focus:ring-1 focus:ring-blue-400" 
                                 value={bulkAccessVlan} 
@@ -989,7 +1050,7 @@ export default function CiscoConfigGenerator() {
                                 </th>
                                 <th className="p-2 font-medium w-28 bg-slate-50">Port</th>
                                 <th className="p-2 font-medium w-36 bg-slate-50">Description</th>
-                                <th className="p-2 font-medium w-44 bg-slate-50">Mode</th>
+                                <th className="p-2 font-medium w-56 bg-slate-50">Mode</th>
                                 <th className="p-2 font-medium w-24 bg-slate-50">VLAN</th>
                                 <th className="p-2 font-medium w-24 text-center bg-slate-50" title="PortFast">Fast</th>
                                 <th className="p-2 font-medium w-24 text-center bg-slate-50" title="Port Security">Sec</th>
@@ -1046,6 +1107,7 @@ export default function CiscoConfigGenerator() {
                                         {port.mode === 'access' ? (
                                             <input 
                                                 type="text" 
+                                                maxLength={4}
                                                 placeholder="1"
                                                 className="w-full p-1 border border-slate-200 rounded text-center"
                                                 value={port.accessVlan}
@@ -1102,6 +1164,7 @@ export default function CiscoConfigGenerator() {
                                                 {port.voiceVlan ? (
                                                      <input 
                                                         type="text" 
+                                                        maxLength={4}
                                                         className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" 
                                                         value={port.voiceVlan} 
                                                         onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} 
@@ -1117,6 +1180,7 @@ export default function CiscoConfigGenerator() {
                                                 <span className="text-[10px] text-slate-400">Native:</span>
                                                 <input 
                                                     type="text" 
+                                                    maxLength={4}
                                                     className="w-12 p-1 text-xs border border-slate-200 rounded" 
                                                     value={port.nativeVlan} 
                                                     onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} 
@@ -1155,24 +1219,13 @@ export default function CiscoConfigGenerator() {
             {/* RIGHT: LIVE PREVIEW */}
             <div className="lg:col-span-1 flex flex-col h-[800px] gap-4">
                 <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-800 flex flex-col flex-1 overflow-hidden">
-                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex flex-col gap-3">
-                        <div className="flex justify-between items-center text-slate-200 font-mono text-sm">
-                            <div className="flex items-center gap-2">
-                                <Terminal size={16} />
-                                <span>config-preview.ios</span>
-                            </div>
-                            <div className="flex gap-2">
-                                 <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
-                                    <Copy size={16} />
-                                 </button>
-                                 <button onClick={downloadFile} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Save as File">
-                                    <Save size={16} />
-                                 </button>
-                            </div>
+                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex justify-between items-center">
+                        <div className="flex items-center gap-2 text-slate-200 font-mono text-sm">
+                            <Terminal size={16} />
+                            <span>config-preview.ios</span>
                         </div>
-                        
-                        <div className="flex flex-wrap gap-4 text-xs text-slate-400 pt-1 border-t border-slate-700">
-                             <label className="flex items-center gap-2 cursor-pointer hover:text-slate-200">
+                        <div className="flex gap-2 items-center">
+                             <label className="flex items-center gap-2 text-slate-400 text-xs cursor-pointer hover:text-slate-200 mr-2">
                                 <input 
                                     type="checkbox" 
                                     className="rounded bg-slate-700 border-slate-600 text-green-500 focus:ring-green-500/50"
@@ -1199,23 +1252,19 @@ export default function CiscoConfigGenerator() {
                                 />
                                 <span>Enable Ports (no shut)</span>
                              </label>
+                             <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
+                                <Copy size={16} />
+                             </button>
+                             <button onClick={downloadFile} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Save as File">
+                                <Save size={16} />
+                             </button>
                         </div>
                     </div>
-                    
-                    {/* SCROLLABLE PREVIEW CONTAINER */}
-                    <div className="flex-1 bg-slate-900 text-green-400 font-mono text-xs p-4 overflow-y-auto whitespace-pre">
-                        <div>! Generated Switchport Config</div>
-                        {ports.map(port => {
-                            if (!port.includeInConfig) return null;
-                            return (
-                                <div key={port.id} id={`preview-config-${port.id}`} className="transition-colors duration-500 p-1 rounded">
-                                    {getPortConfigString(port)}
-                                </div>
-                            );
-                        })}
-                        <div className="mt-4">end</div>
-                        {includeWrMem && <div>wr mem</div>}
-                    </div>
+                    <textarea 
+                        className="flex-1 bg-slate-900 text-green-400 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed"
+                        readOnly
+                        value={generatedConfig}
+                    />
                 </div>
 
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
