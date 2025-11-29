@@ -1219,13 +1219,24 @@ export default function CiscoConfigGenerator() {
             {/* RIGHT: LIVE PREVIEW */}
             <div className="lg:col-span-1 flex flex-col h-[800px] gap-4">
                 <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-800 flex flex-col flex-1 overflow-hidden">
-                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex justify-between items-center">
-                        <div className="flex items-center gap-2 text-slate-200 font-mono text-sm">
-                            <Terminal size={16} />
-                            <span>config-preview.ios</span>
+                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex flex-col gap-3">
+                        <div className="flex justify-between items-center text-slate-200 font-mono text-sm">
+                            <div className="flex items-center gap-2">
+                                <Terminal size={16} />
+                                <span>config-preview.ios</span>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
+                                    <Copy size={16} />
+                                </button>
+                                <button onClick={downloadFile} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Save as File">
+                                    <Save size={16} />
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex gap-2 items-center">
-                             <label className="flex items-center gap-2 text-slate-400 text-xs cursor-pointer hover:text-slate-200 mr-2">
+
+                        <div className="flex flex-wrap gap-4 text-xs text-slate-400 pt-1 border-t border-slate-700">
+                             <label className="flex items-center gap-2 cursor-pointer hover:text-slate-200">
                                 <input 
                                     type="checkbox" 
                                     className="rounded bg-slate-700 border-slate-600 text-green-500 focus:ring-green-500/50"
@@ -1234,7 +1245,7 @@ export default function CiscoConfigGenerator() {
                                 />
                                 <span>Auto-Save (wr mem)</span>
                              </label>
-                             <label className="flex items-center gap-2 text-slate-400 text-xs cursor-pointer hover:text-slate-200 mr-2">
+                             <label className="flex items-center gap-2 cursor-pointer hover:text-slate-200">
                                 <input 
                                     type="checkbox" 
                                     className="rounded bg-slate-700 border-slate-600 text-green-500 focus:ring-green-500/50"
@@ -1252,12 +1263,6 @@ export default function CiscoConfigGenerator() {
                                 />
                                 <span>Enable Ports (no shut)</span>
                              </label>
-                             <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
-                                <Copy size={16} />
-                             </button>
-                             <button onClick={downloadFile} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Save as File">
-                                <Save size={16} />
-                             </button>
                         </div>
                     </div>
                     <textarea 
