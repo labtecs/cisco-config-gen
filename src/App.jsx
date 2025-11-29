@@ -71,9 +71,11 @@ export default function CiscoConfigGenerator() {
         let newPorts = [];
 
         for (let stackMember = 1; stackMember <= stackSize; stackMember++) {
+            // 1. Regular Ports
             for (let portNum = 1; portNum <= switchModel; portNum++) {
                 newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, false));
             }
+            // 2. Uplink Ports
             for (let u = 1; u <= uplinkCount; u++) {
                 const portNum = switchModel + u;
                 newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, true));
@@ -114,6 +116,7 @@ export default function CiscoConfigGenerator() {
             nativeVlan: 1,
             portfast: !isUplink, 
             voiceVlan: '',
+            // Uplinks standardmäßig ausschließen (safety first), aber sie sind da
             includeInConfig: !isUplink, 
             isUplink: isUplink,
             noShutdown: true,
@@ -159,6 +162,7 @@ export default function CiscoConfigGenerator() {
   };
 
   const parseRunningConfig = (text) => {
+    // 1. Hostname & Version
     const hostnameMatch = text.match(/^hostname\s+([^\s]+)/m);
     if (hostnameMatch) setHostname(hostnameMatch[1]);
     else setHostname('');
@@ -310,15 +314,21 @@ export default function CiscoConfigGenerator() {
     });
     if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
 
+    // --- SMART AUTO-DETECTION ---
     let bestFitModel = 48;
-    let uplinks = 0;
-    if (detectedMaxPort <= 10) { bestFitModel = 8; uplinks = Math.max(0, detectedMaxPort - 8); }
-    else if (detectedMaxPort <= 14) { bestFitModel = 12; uplinks = Math.max(0, detectedMaxPort - 12); }
-    else if (detectedMaxPort <= 18) { bestFitModel = 16; uplinks = Math.max(0, detectedMaxPort - 16); }
-    else if (detectedMaxPort <= 28) { bestFitModel = 24; uplinks = Math.max(0, detectedMaxPort - 24); }
-    else { bestFitModel = 48; uplinks = Math.max(0, detectedMaxPort - 48); }
-    if (uplinks > 0 && uplinks <= 2) uplinks = 2;
-    if (uplinks > 2) uplinks = 4;
+    let uplinks = 4; // Default für 24/48er
+
+    if (detectedMaxPort <= 8) { bestFitModel = 8; uplinks = 2; }
+    else if (detectedMaxPort <= 12) { bestFitModel = 12; uplinks = 2; }
+    else if (detectedMaxPort <= 16) { bestFitModel = 16; uplinks = 2; }
+    else if (detectedMaxPort <= 24) { 
+        bestFitModel = 24; 
+        uplinks = 4; // Standard 24er hat 4 Uplinks
+    }
+    else { 
+        bestFitModel = 48; 
+        uplinks = 4; // Standard 48er hat 4 Uplinks
+    }
 
     setPortNaming(detectedNaming);
     setStackSize(detectedStackSize);
@@ -345,6 +355,7 @@ export default function CiscoConfigGenerator() {
             portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
         });
       }
+      // FORCE CREATION OF UPLINKS even if not in file
       for (let u = 1; u <= upCount; u++) {
         let p = model + u;
         let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
@@ -355,7 +366,9 @@ export default function CiscoConfigGenerator() {
         if (parsed) mergedPorts.push({ ...parsed, name, isUplink: true });
         else mergedPorts.push({
             id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1, 
-            portfast: false, voiceVlan: '', includeInConfig: false, isUplink: true,
+            portfast: false, voiceVlan: '', 
+            includeInConfig: false, // Default off for safety
+            isUplink: true,
             noShutdown: true,
             portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
         });
@@ -448,7 +461,6 @@ export default function CiscoConfigGenerator() {
 
   // --- Scroll & Selection Handlers ---
   
-  // Scroll Helper
   const scrollToTablePort = (id) => {
       const el = document.getElementById(`row-${id}`);
       if (el) {
@@ -462,7 +474,6 @@ export default function CiscoConfigGenerator() {
       const el = document.getElementById(`preview-config-${id}`);
       if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Highlight logic for preview block
           el.classList.add('bg-slate-700'); 
           setTimeout(() => el.classList.remove('bg-slate-700'), 1500);
       }
@@ -473,7 +484,6 @@ export default function CiscoConfigGenerator() {
     const isShift = e && (e.shiftKey || (e.nativeEvent && e.nativeEvent.shiftKey));
     const isAlt = e && (e.altKey || (e.nativeEvent && e.nativeEvent.altKey));
 
-    // Only scroll to table if ALT is pressed
     if (isAlt && !newSet.has(id)) { 
         scrollToTablePort(id);
     }
@@ -989,7 +999,7 @@ export default function CiscoConfigGenerator() {
                                 </th>
                                 <th className="p-2 font-medium w-28 bg-slate-50">Port</th>
                                 <th className="p-2 font-medium w-36 bg-slate-50">Description</th>
-                                <th className="p-2 font-medium w-44 bg-slate-50">Mode</th>
+                                <th className="p-2 font-medium w-56 bg-slate-50">Mode</th>
                                 <th className="p-2 font-medium w-24 bg-slate-50">VLAN</th>
                                 <th className="p-2 font-medium w-24 text-center bg-slate-50" title="PortFast">Fast</th>
                                 <th className="p-2 font-medium w-24 text-center bg-slate-50" title="Port Security">Sec</th>
@@ -1155,24 +1165,13 @@ export default function CiscoConfigGenerator() {
             {/* RIGHT: LIVE PREVIEW */}
             <div className="lg:col-span-1 flex flex-col h-[800px] gap-4">
                 <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-800 flex flex-col flex-1 overflow-hidden">
-                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex flex-col gap-3">
-                        <div className="flex justify-between items-center text-slate-200 font-mono text-sm">
-                            <div className="flex items-center gap-2">
-                                <Terminal size={16} />
-                                <span>config-preview.ios</span>
-                            </div>
-                            <div className="flex gap-2">
-                                 <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
-                                    <Copy size={16} />
-                                 </button>
-                                 <button onClick={downloadFile} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Save as File">
-                                    <Save size={16} />
-                                 </button>
-                            </div>
+                    <div className="bg-slate-800 p-3 border-b border-slate-700 flex justify-between items-center">
+                        <div className="flex items-center gap-2 text-slate-200 font-mono text-sm">
+                            <Terminal size={16} />
+                            <span>config-preview.ios</span>
                         </div>
-                        
-                        <div className="flex flex-wrap gap-4 text-xs text-slate-400 pt-1 border-t border-slate-700">
-                             <label className="flex items-center gap-2 cursor-pointer hover:text-slate-200">
+                        <div className="flex gap-2 items-center">
+                             <label className="flex items-center gap-2 text-slate-400 text-xs cursor-pointer hover:text-slate-200 mr-2">
                                 <input 
                                     type="checkbox" 
                                     className="rounded bg-slate-700 border-slate-600 text-green-500 focus:ring-green-500/50"
@@ -1199,23 +1198,19 @@ export default function CiscoConfigGenerator() {
                                 />
                                 <span>Enable Ports (no shut)</span>
                              </label>
+                             <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
+                                <Copy size={16} />
+                             </button>
+                             <button onClick={downloadFile} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Save as File">
+                                <Save size={16} />
+                             </button>
                         </div>
                     </div>
-                    
-                    {/* SCROLLABLE PREVIEW CONTAINER */}
-                    <div className="flex-1 bg-slate-900 text-green-400 font-mono text-xs p-4 overflow-y-auto whitespace-pre">
-                        <div>! Generated Switchport Config</div>
-                        {ports.map(port => {
-                            if (!port.includeInConfig) return null;
-                            return (
-                                <div key={port.id} id={`preview-config-${port.id}`} className="transition-colors duration-500 p-1 rounded">
-                                    {getPortConfigString(port)}
-                                </div>
-                            );
-                        })}
-                        <div className="mt-4">end</div>
-                        {includeWrMem && <div>wr mem</div>}
-                    </div>
+                    <textarea 
+                        className="flex-1 bg-slate-900 text-green-400 font-mono text-xs p-4 resize-none focus:outline-none leading-relaxed"
+                        readOnly
+                        value={generatedConfig}
+                    />
                 </div>
 
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
