@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Save, Upload, Copy, Server, Layers, Shield, Activity, Terminal, Phone, Edit3, X, Power, Filter, Lock, CheckSquare, PlusCircle, AlertCircle, Info, RotateCcw } from 'lucide-react';
 
 export default function CiscoConfigGenerator() {
+  // --- VERSION ---
+  const APP_VERSION = "v1.2";
+
   // --- 1. STATE DEFINITIONS ---
   const [switchModel, setSwitchModel] = useState(48); 
   const [uplinkCount, setUplinkCount] = useState(4); 
@@ -627,7 +630,7 @@ export default function CiscoConfigGenerator() {
             <Server className="w-8 h-8" />
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Cisco Switchport Gen</h1>
-              <p className="text-blue-200 text-xs">Config Generator & Visualizer</p>
+              <p className="text-blue-200 text-xs">Config Generator & Visualizer <span className="opacity-60 ml-1">{APP_VERSION}</span></p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1275,7 +1278,7 @@ export default function CiscoConfigGenerator() {
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl">
                     <h3 className="text-blue-800 font-bold mb-2 text-sm flex items-center gap-2">
                         <Shield size={14}/> 
-                        Neue Funktionen
+                        Neue Funktionen ({APP_VERSION})
                     </h3>
                     <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
                         <li><strong>Alt-Klick (Visualizer):</strong> Springe zur Zeile in der Tabelle (ohne Scrollen bei normalem Klick).</li>
