@@ -2,8 +2,18 @@ version: '3.8'
 
 services:
   cisco-gen:
-    build: .
+    # Baut das Image aus dem aktuellen Verzeichnis (wo das Dockerfile liegt)
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    
     container_name: cisco-config-gen
-    restart: always
+    restart: unless-stopped
+    
+    # Mapping: Außen Port 4949 -> Innen Port 80 (Nginx Standard)
     ports:
       - "4949:80"
+    
+    # Optional: Zeitzone setzen, falls Logs wichtig sind
+    environment:
+      - TZ=Europe/Berlin
