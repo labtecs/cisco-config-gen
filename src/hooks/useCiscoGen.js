@@ -193,10 +193,13 @@ export function useCiscoGen() {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
             if (match) typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
+
+            // --- VLAN PARSING LOGIC START ---
             if (trimmed.includes('switchport voice vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
                 const v = vlanPart?.split(/\s+/)[0];
                 if(v) { voiceVlanCounts[v] = (voiceVlanCounts[v] || 0) + 1; }
+
             }
             if (trimmed.includes('switchport access vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
@@ -205,6 +208,8 @@ export function useCiscoGen() {
             }
             const sviMatch = trimmed.match(/^interface Vlan\s?(\d+)/i);
             if (sviMatch && sviMatch[1]) foundVlans.add(sviMatch[1]);
+
+            // Das hier ist der wichtige Teil für "Ungenutzte" VLANs (aus der Datenbank)
             const l2Match = trimmed.match(/^vlan\s+(\d+)/i);
             if (l2Match && l2Match[1]) {
                 foundVlans.add(l2Match[1]);
@@ -214,7 +219,9 @@ export function useCiscoGen() {
                 detectedVlanNames[currentDefVlanId] = name;
             }
             if (trimmed.startsWith('interface') || trimmed === '!') currentDefVlanId = null;
+            // --- VLAN PARSING LOGIC END ---
         });
+
 
         const sortedTypes = Object.entries(typeCounts).sort((a,b) => b[1] - a[1]);
         let detBase = sortedTypes[0]?.[0] || 'GigabitEthernet';
@@ -230,6 +237,8 @@ export function useCiscoGen() {
             if (count > maxCount) { maxCount = count; detectedVoiceVlan = vlan; }
         });
         if (detectedVoiceVlan) setGlobalVoiceVlan(detectedVoiceVlan);
+
+        // Populate Detected VLANs state
         setDetectedVlans(Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)));
         setVlanNames(detectedVlanNames);
 
@@ -324,10 +333,14 @@ export function useCiscoGen() {
     useEffect(() => { generatePortList(); }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType, generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
-    // --- MEMOS ---
+// --- MEMOS ---
     const availableVlans = useMemo(() => {
         const activeOnPorts = new Set();
         const allVlans = new Set(detectedVlans);
+
+        // Debug 3: Was kommt im Calculator an?
+        console.log("DEBUG MEMO - Input Detected:", detectedVlans);
+
         ports.forEach(p => {
             if (p.mode === 'access' && p.accessVlan) { activeOnPorts.add(p.accessVlan); allVlans.add(p.accessVlan); }
             if (p.mode === 'trunk' && p.trunkVlans) {
@@ -338,16 +351,30 @@ export function useCiscoGen() {
         if (!allVlans.has('1')) allVlans.add('1');
 
         return Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
-            const isDetected = detectedVlans.includes(vlan);
-            const isUsed = activeOnPorts.has(vlan);
-            const name = vlanNames[vlan];
+            // WICHTIG: Hier prüfen wir, ob Typen (String vs Number) das Problem sind
+            // Wir erzwingen String-Vergleich
+            const strVlan = String(vlan);
+
+            // Prüfen ob in Detected Liste (auch als String)
+            const isDetected = detectedVlans.some(d => String(d) === strVlan);
+            const isUsed = activeOnPorts.has(strVlan);
+
+            const name = vlanNames[strVlan];
             let status = 'manual';
-            if (vlan === '1') {
+
+            if (strVlan === '1') {
                 status = 'default';
             } else {
-                if (isDetected && isUsed) status = 'used'; else if (isDetected && !isUsed) status = 'unused';
+                if (isDetected && isUsed) status = 'used'; // Grau (Genutzt)
+                else if (isDetected && !isUsed) status = 'unused'; // Orange (Datenbank, aber nicht auf Port)
             }
-            return { id: vlan, status, name };
+
+            // Debug für ein spezifisches VLAN (z.B. 101)
+            if (strVlan === '101' || strVlan === '20') {
+                console.log(`DEBUG VLAN ${strVlan}: Detected=${isDetected}, Used=${isUsed} -> Status=${status}`);
+            }
+
+            return { id: strVlan, status, name };
         });
     }, [detectedVlans, ports, vlanNames]);
 
