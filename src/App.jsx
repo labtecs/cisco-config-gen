@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckSquare } from 'lucide-react';
+import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter } from 'lucide-react';
 import { useCiscoGen } from './hooks/useCiscoGen';
 
 // Components
@@ -13,6 +13,16 @@ import MultiPortEditor from './components/Editor/MultiPortEditor';
 export default function CiscoConfigGenerator() {
     const APP_VERSION = "v3.5";
     const logic = useCiscoGen();
+
+    // Helper für VLAN Farben
+    const getVlanBadgeStyle = (status) => {
+        switch (status) {
+            case 'unused': return "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200";
+            case 'manual': return "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200";
+            case 'default': return "bg-slate-100 text-slate-400 border-slate-200 cursor-default";
+            default: return "bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border-slate-200"; // used/detected
+        }
+    };
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
@@ -57,8 +67,56 @@ export default function CiscoConfigGenerator() {
                         {/* HEADER AREA */}
                         <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-3">
                             <div className="flex justify-between items-center">
-                                {/* Hier könnte man noch eine Sub-Header Component machen, aber so ist es auch okay */}
+                                <h2 className="font-semibold text-slate-700 flex items-center gap-2">
+                                    Config Editor
+                                </h2>
+
                                 <div className="flex items-center gap-4">
+                                    {/* COLUMNS TOGGLE - Wiederhergestellt */}
+                                    {logic.viewMode === 'multi' && (
+                                        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                                            <button
+                                                onClick={() => logic.setShowPoeColumn(!logic.showPoeColumn)}
+                                                className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showPoeColumn ? 'bg-white text-yellow-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                                                title="Show PoE Column"
+                                            >
+                                                <Zap size={10} className={logic.showPoeColumn ? "fill-yellow-500" : ""} /> PoE
+                                            </button>
+                                            <div className="w-px h-3 bg-slate-300 mx-1"></div>
+                                            <button
+                                                onClick={() => logic.setShowSecColumn(!logic.showSecColumn)}
+                                                className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showSecColumn ? 'bg-white text-red-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                                                title="Show Security Column"
+                                            >
+                                                <Shield size={10} className={logic.showSecColumn ? "fill-red-500" : ""} /> Sec
+                                            </button>
+                                            <div className="w-px h-3 bg-slate-300 mx-1"></div>
+                                            <button
+                                                onClick={() => logic.setShowFastColumn(!logic.showFastColumn)}
+                                                className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showFastColumn ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                                                title="Show Fast Column"
+                                            >
+                                                <FastForward size={10} className={logic.showFastColumn ? "fill-blue-500" : ""} /> Fast
+                                            </button>
+                                            <div className="w-px h-3 bg-slate-300 mx-1"></div>
+                                            <button
+                                                onClick={() => logic.setShowVoiceColumn(!logic.showVoiceColumn)}
+                                                className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showVoiceColumn ? 'bg-white text-purple-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                                                title="Show Voice Column"
+                                            >
+                                                <Phone size={10} className={logic.showVoiceColumn ? "fill-purple-500" : ""} /> Voice
+                                            </button>
+                                            <div className="w-px h-3 bg-slate-300 mx-1"></div>
+                                            <button
+                                                onClick={() => logic.setShowStateColumn(!logic.showStateColumn)}
+                                                className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showStateColumn ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                                                title="Show State Column"
+                                            >
+                                                <Power size={10} className={logic.showStateColumn ? "fill-blue-500" : ""} /> State
+                                            </button>
+                                        </div>
+                                    )}
+
                                     {/* View Toggle */}
                                     <div className="bg-white border border-slate-200 rounded-lg p-1 flex shadow-sm">
                                         <button
@@ -77,14 +135,22 @@ export default function CiscoConfigGenerator() {
                                 </div>
                             </div>
 
-                            {/* VLAN Legend */}
+                            {/* VLAN Legend - Wiederhergestellt mit Farben */}
                             {logic.viewMode === 'multi' && logic.availableVlans.length > 0 && (
-                                <div className="flex flex-wrap gap-2 text-xs">
-                                    {logic.availableVlans.map(v => (
-                                        <span key={v.id} onClick={() => logic.selectPortsByVlan(v.id)} className="cursor-pointer border px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 hover:bg-blue-100">
-                                            VLAN {v.id}
-                                        </span>
-                                    ))}
+                                <div className="flex items-center gap-2 text-xs animate-in fade-in">
+                                    <span className="text-slate-400 flex items-center gap-1"><Filter size={12}/> VLANs:</span>
+                                    <div className="flex flex-wrap gap-2">
+                                        {logic.availableVlans.map(v => (
+                                            <button
+                                                key={v.id}
+                                                onClick={() => logic.selectPortsByVlan(v.id)}
+                                                className={`border px-2 py-0.5 rounded-full transition-colors font-mono cursor-pointer flex items-center gap-1 ${getVlanBadgeStyle(v.status)}`}
+                                                title={v.name ? `VLAN ${v.id}: ${v.name}` : `VLAN ${v.id}`}
+                                            >
+                                                {v.id}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>
