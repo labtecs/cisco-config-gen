@@ -1,19 +1,30 @@
 version: '3.8'
 
 services:
-  cisco-gen:
-    # Baut das Image aus dem aktuellen Verzeichnis (wo das Dockerfile liegt)
-    build: 
+  # --- SERVICE 1: Das Gehirn (Backend) ---
+  backend:
+    build:
       context: .
-      dockerfile: Dockerfile
-    
-    container_name: cisco-config-gen
+      dockerfile: Dockerfile.backend
+    container_name: cisco-backend
+    # WICHTIG: Wir mappen Port 3001 nach außen.
+    # Dein React-Frontend (im Browser) ruft http://localhost:3001 auf.
+    # Deshalb muss dieser Port am PC offen sein.
+    ports:
+      - "3001:3001"
     restart: unless-stopped
-    
-    # Mapping: Außen Port 4949 -> Innen Port 80 (Nginx Standard)
+
+  # --- SERVICE 2: Das Gesicht (Frontend) ---
+  frontend:
+    build:
+      context: .
+      # Hier nutzen wir dein altes, umbenanntes Dockerfile
+      dockerfile: Dockerfile.frontend
+    container_name: cisco-frontend
+    # Wir nehmen Port 8080 (oder 4949 wie du es hattest), damit er nicht mit Vite (5173) kollidiert
     ports:
       - "4949:80"
-    
-    # Optional: Zeitzone setzen, falls Logs wichtig sind
-    environment:
-      - TZ=Europe/Berlin
+    restart: unless-stopped
+    # Das Frontend startet erst, wenn das Backend bereit ist
+    depends_on:
+      - backend

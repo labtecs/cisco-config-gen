@@ -653,6 +653,46 @@ export function useCiscoGen() {
         if (idx < ports.length - 1) { setSingleEditPortId(ports[idx + 1].id); scrollToPreviewPort(ports[idx + 1].id); }
     };
 
+    // SSH Connection State
+    const [showConnectionBar, setShowConnectionBar] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
+
+    // ... (restlicher Code) ...
+
+    // Neue Funktion für den Connect
+    const handleSSHConnect = async (credentials) => {
+        setIsConnecting(true);
+        console.log("Versuche Verbindung zu:", credentials.ip);
+
+        try {
+            const response = await fetch('http://localhost:3001/api/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentials)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Verbindung fehlgeschlagen');
+            }
+
+            if (data.success && data.config) {
+                showToast(`Verbindung erfolgreich! Config geladen.`);
+                parseRunningConfig(data.config); // Config direkt in den Parser werfen
+                setShowConnectionBar(false); // Leiste schließen
+            } else {
+                throw new Error("Keine Config empfangen");
+            }
+
+        } catch (error) {
+            console.error("SSH Error:", error);
+            alert(`Fehler: ${error.message}\n\nStelle sicher, dass 'node server.js' läuft!`);
+        } finally {
+            setIsConnecting(false);
+        }
+    };
+
     return {
         // State
         switchModel, setSwitchModel,
@@ -693,6 +733,8 @@ export function useCiscoGen() {
         bulkSecAgingType, setBulkSecAgingType,
         showSecurityOptions, setShowSecurityOptions,
         availableVlans, generatedConfig, singlePort,
+        showConnectionBar, setShowConnectionBar,
+        isConnecting, handleSSHConnect,
 
         // Handlers
         resetToDefaults, handleFileUpload, updatePort, toggleInclude, toggleGlobalInclude,

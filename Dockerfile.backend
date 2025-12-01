@@ -1,0 +1,18 @@
+# (Die Ubuntu-Zeilen hier löschen!)
+FROM node:18-alpine
+
+# Arbeitsordner im Container festlegen
+WORKDIR /app
+
+# 1. Nur package.json kopieren und installieren
+COPY package.json ./
+RUN npm install
+
+# 2. Den Rest des Codes kopieren
+COPY . .
+
+# Info: Dieser Container nutzt Port 3001
+EXPOSE 3001
+
+# Startbefehl
+CMD ["node", "server.js"]

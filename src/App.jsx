@@ -4,6 +4,7 @@ import { useCiscoGen } from './hooks/useCiscoGen';
 
 // Components
 import Header from './components/Layout/Header';
+import ConnectionBar from './components/Layout/ConnectionBar';
 import SwitchVisualizer from './components/Visualizer/SwitchVisualizer';
 import GlobalSettings from './components/Controls/GlobalSettings';
 import ConfigPreview from './components/Editor/ConfigPreview';
@@ -11,7 +12,7 @@ import SinglePortEditor from './components/Editor/SinglePortEditor';
 import MultiPortEditor from './components/Editor/MultiPortEditor';
 
 export default function CiscoConfigGenerator() {
-    const APP_VERSION = "v3.6";
+    const APP_VERSION = "v3.7";
     const logic = useCiscoGen();
 
     return (
@@ -20,7 +21,18 @@ export default function CiscoConfigGenerator() {
                 version={APP_VERSION}
                 onReset={logic.resetToDefaults}
                 onUpload={logic.handleFileUpload}
+                onToggleConnect={() => logic.setShowConnectionBar(!logic.showConnectionBar)} // <--- NEU
+                isConnectOpen={logic.showConnectionBar} // <--- NEU
             />
+
+            {/* CONNECTION BAR - SLIDES IN */}
+            {logic.showConnectionBar && (
+                <ConnectionBar
+                    onConnect={logic.handleSSHConnect}
+                    onClose={() => logic.setShowConnectionBar(false)}
+                    isLoading={logic.isConnecting}
+                />
+            )}
 
             <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-8">
                 {/* CONTROLS */}
