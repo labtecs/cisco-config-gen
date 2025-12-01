@@ -176,12 +176,12 @@ export default function CiscoConfigGenerator() {
                                             <span>Genutzt (Config)</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
-                                            <div className="w-2.5 h-2.5 rounded-full bg-indigo-100 border border-indigo-200"></div>
+                                            <div className="w-2.5 h-2.5 rounded-full bg-blue-200 border border-blue-200"></div>
                                             <span>Neu / Manuell</span>
                                         </div>
                                         <div className="flex items-center gap-1.5">
                                             <div className="w-2.5 h-2.5 rounded-full bg-orange-200 border border-orange-400"></div>
-                                            <span className="text-orange-800 font-bold">Ungenutzt (Running-Config)</span>
+                                            <span className="text-orange-400 font-bold">Ungenutzt (Running-Config)</span>
                                         </div>
                                     </div>
                                 </div>
