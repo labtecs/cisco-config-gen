@@ -337,45 +337,63 @@ export function useCiscoGen() {
     const availableVlans = useMemo(() => {
         const activeOnPorts = new Set();
         const allVlans = new Set(detectedVlans);
-
-        // Debug 3: Was kommt im Calculator an?
-        console.log("DEBUG MEMO - Input Detected:", detectedVlans);
+        const complexRanges = new Set(); // NEU: Speicher für Ranges
 
         ports.forEach(p => {
-            if (p.mode === 'access' && p.accessVlan) { activeOnPorts.add(p.accessVlan); allVlans.add(p.accessVlan); }
+            // 1. Access Ports (immer einzeln)
+            if (p.mode === 'access' && p.accessVlan) {
+                activeOnPorts.add(p.accessVlan);
+                allVlans.add(p.accessVlan);
+            }
+
+            // 2. Trunk Ports
             if (p.mode === 'trunk' && p.trunkVlans) {
                 const parsedTrunkVlans = parseVlanString(p.trunkVlans);
-                parsedTrunkVlans.forEach(v => { activeOnPorts.add(v); allVlans.add(v); });
+
+                // LOGIK: Ist es eine Riesen-Range? (z.B. > 50 VLANs)
+                if (parsedTrunkVlans.length >= 50) {
+                    // JA: Wir merken uns den String "2-4094" als eigenes Item
+                    complexRanges.add(p.trunkVlans);
+                } else {
+                    // NEIN: Wir fügen die VLANs einzeln hinzu (wie bisher)
+                    parsedTrunkVlans.forEach(v => {
+                        activeOnPorts.add(v);
+                        allVlans.add(v);
+                    });
+                }
             }
         });
+
         if (!allVlans.has('1')) allVlans.add('1');
 
-        return Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
-            // WICHTIG: Hier prüfen wir, ob Typen (String vs Number) das Problem sind
-            // Wir erzwingen String-Vergleich
+        // A. Einzelne VLANs sortieren
+        const singleVlans = Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
             const strVlan = String(vlan);
-
-            // Prüfen ob in Detected Liste (auch als String)
             const isDetected = detectedVlans.some(d => String(d) === strVlan);
             const isUsed = activeOnPorts.has(strVlan);
-
             const name = vlanNames[strVlan];
+
             let status = 'manual';
+            if (strVlan === '1') status = 'default';
+            else if (isDetected && isUsed) status = 'used';
+            else if (isDetected && !isUsed) status = 'unused';
 
-            if (strVlan === '1') {
-                status = 'default';
-            } else {
-                if (isDetected && isUsed) status = 'used'; // Grau (Genutzt)
-                else if (isDetected && !isUsed) status = 'unused'; // Orange (Datenbank, aber nicht auf Port)
-            }
-
-            // Debug für ein spezifisches VLAN (z.B. 101)
-            if (strVlan === '101' || strVlan === '20') {
-                console.log(`DEBUG VLAN ${strVlan}: Detected=${isDetected}, Used=${isUsed} -> Status=${status}`);
-            }
-
-            return { id: strVlan, status, name };
+            return { id: strVlan, status, name, isRange: false };
         });
+
+        // B. Ranges hinzufügen
+        const rangeVlans = Array.from(complexRanges).map(rangeStr => {
+            return {
+                id: rangeStr, // Der Text auf dem Button, z.B. "2-4094"
+                status: 'used', // Ranges auf Trunks sind per Definition "used"
+                name: 'Large Trunk Range',
+                isRange: true
+            };
+        });
+
+        // C. Beides kombinieren (Ranges am Ende)
+        return [...singleVlans, ...rangeVlans];
+
     }, [detectedVlans, ports, vlanNames]);
 
     const handleFileUpload = (e) => {
@@ -546,7 +564,24 @@ export function useCiscoGen() {
     const selectPortsByVlan = (vlanId) => {
         if (viewMode === 'single') setViewMode('multi');
         const strVlanId = String(vlanId);
-        const matchingIds = ports.filter(p => String(p.accessVlan) === strVlanId && p.mode === 'access').map(p => p.id);
+
+        const matchingIds = ports.filter(p => {
+            // Case A: Access Port matcht genau dieses VLAN
+            if (p.mode === 'access' && String(p.accessVlan) === strVlanId) return true;
+
+            // Case B: Trunk Port hat genau diesen String (für Ranges wie "2-4094")
+            if (p.mode === 'trunk' && p.trunkVlans === strVlanId) return true;
+
+            // Case C: Trunk Port beinhaltet dieses einzelne VLAN (für kleine Trunks)
+            if (p.mode === 'trunk' && !p.trunkVlans.includes('-')) {
+                // Einfacher Check für Einzelwerte in Trunks
+                const parts = p.trunkVlans.split(',').map(s => s.trim());
+                if (parts.includes(strVlanId)) return true;
+            }
+
+            return false;
+        }).map(p => p.id);
+
         setSelectedPortIds(new Set(matchingIds));
         setLastSelectedId(null);
     };

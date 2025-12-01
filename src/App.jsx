@@ -11,8 +11,7 @@ import SinglePortEditor from './components/Editor/SinglePortEditor';
 import MultiPortEditor from './components/Editor/MultiPortEditor';
 
 export default function CiscoConfigGenerator() {
-    const APP_VERSION = "v3.5";
-    console.log(APP_VERSION);
+    const APP_VERSION = "v3.6";
     const logic = useCiscoGen();
 
     return (
@@ -53,24 +52,26 @@ export default function CiscoConfigGenerator() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
                     {/* LEFT: CONFIG AREA */}
-                    <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[800px] relative">
+                    <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[1000px] relative">
 
-                        {/* HEADER AREA - ORIGINAL v3.4 RESTORED */}
-                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-3">
-                            <div className="flex justify-between items-center">
+                        {/* HEADER AREA */}
+                        <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col gap-4">
+
+                            {/* Row 1: Title & Toggles */}
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                                 <h2 className="font-semibold text-slate-700 flex items-center gap-2">
                                     <Activity size={18} />
                                     Port Configuration
                                 </h2>
 
-                                <div className="flex items-center gap-4">
+                                <div className="flex items-center gap-4 self-end md:self-auto">
                                     {/* COLUMNS TOGGLE */}
                                     {logic.viewMode === 'multi' && (
-                                        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                                        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 shadow-sm">
                                             <button
                                                 onClick={() => logic.setShowPoeColumn(!logic.showPoeColumn)}
                                                 className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showPoeColumn ? 'bg-white text-yellow-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-                                                title={logic.showPoeColumn ? "Hide PoE Column" : "Show PoE Column"}
+                                                title="Show PoE"
                                             >
                                                 <Zap size={10} className={logic.showPoeColumn ? "fill-yellow-500" : ""} /> PoE
                                             </button>
@@ -78,7 +79,7 @@ export default function CiscoConfigGenerator() {
                                             <button
                                                 onClick={() => logic.setShowSecColumn(!logic.showSecColumn)}
                                                 className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showSecColumn ? 'bg-white text-red-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-                                                title={logic.showSecColumn ? "Hide Security Column" : "Show Security Column"}
+                                                title="Show Security"
                                             >
                                                 <Shield size={10} className={logic.showSecColumn ? "fill-red-500" : ""} /> Sec
                                             </button>
@@ -86,7 +87,7 @@ export default function CiscoConfigGenerator() {
                                             <button
                                                 onClick={() => logic.setShowFastColumn(!logic.showFastColumn)}
                                                 className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showFastColumn ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-                                                title={logic.showFastColumn ? "Hide Fast Column" : "Show Fast Column"}
+                                                title="Show Fast"
                                             >
                                                 <FastForward size={10} className={logic.showFastColumn ? "fill-blue-500" : ""} /> Fast
                                             </button>
@@ -94,7 +95,7 @@ export default function CiscoConfigGenerator() {
                                             <button
                                                 onClick={() => logic.setShowVoiceColumn(!logic.showVoiceColumn)}
                                                 className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showVoiceColumn ? 'bg-white text-purple-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-                                                title={logic.showVoiceColumn ? "Hide Voice Column" : "Show Voice Column"}
+                                                title="Show Voice"
                                             >
                                                 <Phone size={10} className={logic.showVoiceColumn ? "fill-purple-500" : ""} /> Voice
                                             </button>
@@ -102,7 +103,7 @@ export default function CiscoConfigGenerator() {
                                             <button
                                                 onClick={() => logic.setShowStateColumn(!logic.showStateColumn)}
                                                 className={`px-2 py-1 text-[10px] font-bold uppercase rounded transition-colors flex items-center gap-1 ${logic.showStateColumn ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
-                                                title={logic.showStateColumn ? "Hide State Column" : "Show State Column"}
+                                                title="Show State"
                                             >
                                                 <Power size={10} className={logic.showStateColumn ? "fill-blue-500" : ""} /> State
                                             </button>
@@ -115,62 +116,72 @@ export default function CiscoConfigGenerator() {
                                             onClick={() => logic.setViewMode('multi')}
                                             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${logic.viewMode === 'multi' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
                                         >
-                                            Multiport Editor
+                                            MultiPort
                                         </button>
                                         <button
                                             onClick={() => logic.setViewMode('single')}
                                             className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${logic.viewMode === 'single' ? 'bg-blue-100 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
                                         >
-                                            Single Port Editor
+                                            SinglePort
                                         </button>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* VLAN LEGEND (Original Inline Logic) */}
-                            {logic.viewMode === 'multi' && logic.availableVlans.length > 0 && (
-                                <div>
-                                    <div className="flex items-center gap-2 text-xs animate-in fade-in">
-                                        <span className="text-slate-400 flex items-center gap-1"><Filter size={12}/> VLANs:</span>
-                                        <div className="flex flex-wrap gap-2">
-                                            {logic.availableVlans.map(vlanObj => {
-                                                // Exakte Kopie der v3.4 Logik
-                                                let styleClass = "bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border-slate-200";
-                                                let title = `VLAN ${vlanObj.id} (Detected & Used)`;
-                                                if (vlanObj.status === 'unused') { styleClass = "bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"; }
-                                                else if (vlanObj.status === 'manual') { styleClass = "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"; }
-                                                else if (vlanObj.status === 'default') { styleClass = "bg-slate-100 text-slate-400 border-slate-200 cursor-default"; }
+                            {/* Row 2: VLANs and Legend */}
+                            {logic.viewMode === 'multi' && (
+                                <div className="space-y-3">
+                                    {logic.availableVlans.length > 0 && (
+                                        <div className="flex items-start gap-2 text-xs animate-in fade-in">
+                                            <span className="text-slate-400 flex items-center gap-1 mt-1"><Filter size={12}/> VLANs:</span>
+                                            <div className="flex flex-wrap gap-2">
+                                                {logic.availableVlans.map(vlanObj => {
+                                                    let styleClass = "bg-slate-100 hover:bg-blue-100 text-slate-600 hover:text-blue-700 border-slate-200";
+                                                    let title = `VLAN ${vlanObj.id} (Detected & Used)`;
 
-                                                const tooltip = vlanObj.name
-                                                    ? `VLAN ${vlanObj.id}: ${vlanObj.name}`
-                                                    : vlanObj.status === 'default' ? "VLAN 1 (Default)" : title;
+                                                    // Use Stronger Colors for Visibility
+                                                    if (vlanObj.status === 'unused') {
+                                                        styleClass = "bg-orange-200 hover:bg-orange-300 text-orange-900 border-orange-400 font-bold shadow-sm";
+                                                    }
+                                                    else if (vlanObj.status === 'manual') {
+                                                        styleClass = "bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border-indigo-300";
+                                                    }
+                                                    else if (vlanObj.status === 'default') {
+                                                        styleClass = "bg-slate-100 text-slate-400 border-slate-200 cursor-default";
+                                                    }
 
-                                                return (
-                                                    <button
-                                                        key={vlanObj.id}
-                                                        onClick={() => logic.selectPortsByVlan(vlanObj.id)}
-                                                        className={`border px-2 py-0.5 rounded-full transition-colors font-mono cursor-pointer flex items-center gap-1 ${styleClass}`}
-                                                        title={tooltip}
-                                                    >
-                                                        {vlanObj.id}
-                                                    </button>
-                                                );
-                                            })}
+                                                    const tooltip = vlanObj.name
+                                                        ? `VLAN ${vlanObj.id}: ${vlanObj.name}`
+                                                        : vlanObj.status === 'default' ? "VLAN 1 (Default)" : title;
+
+                                                    return (
+                                                        <button
+                                                            key={vlanObj.id}
+                                                            onClick={() => logic.selectPortsByVlan(vlanObj.id)}
+                                                            className={`border px-2 py-0.5 rounded-full transition-colors font-mono cursor-pointer flex items-center gap-1 ${styleClass}`}
+                                                            title={tooltip}
+                                                        >
+                                                            {vlanObj.id}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-slate-200 border border-slate-300"></div>
+                                    {/* LEGENDE - Immer sichtbar in Multi View */}
+                                    <div className="flex items-center gap-4 pt-2 border-t border-slate-100 text-[10px] text-slate-500 font-medium">
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-slate-200 border border-slate-300"></div>
                                             <span>Genutzt (Config)</span>
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-indigo-100 border border-indigo-200"></div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-indigo-100 border border-indigo-200"></div>
                                             <span>Neu / Manuell</span>
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-orange-100 border border-orange-200"></div>
-                                            <span>Ungenutzt</span>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-orange-200 border border-orange-400"></div>
+                                            <span className="text-orange-800 font-bold">Ungenutzt (Running-Config)</span>
                                         </div>
                                     </div>
                                 </div>

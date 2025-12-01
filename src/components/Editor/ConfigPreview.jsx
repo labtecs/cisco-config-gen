@@ -12,7 +12,7 @@ export default function ConfigPreview({
                                           version
                                       }) {
     return (
-        <div className="lg:col-span-1 flex flex-col h-[800px] gap-4">
+        <div className="lg:col-span-1 flex flex-col h-[1000px] gap-4">
             <div className="bg-slate-900 rounded-xl shadow-lg border border-slate-800 flex flex-col flex-1 overflow-hidden">
                 <div className="bg-slate-800 p-3 border-b border-slate-700 flex flex-col gap-3">
                     <div className="flex justify-between items-center text-slate-200 font-mono text-sm">
