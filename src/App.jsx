@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter, Activity, Copy, Save, Terminal } from 'lucide-react';
+import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter, Activity,} from 'lucide-react';
 import { useCiscoGen } from './hooks/useCiscoGen';
 
 // Components
