@@ -665,7 +665,11 @@ export function useCiscoGen() {
         console.log("Versuche Verbindung zu:", credentials.ip);
 
         try {
-            const response = await fetch('http://localhost:3001/api/connect', {
+            const protocol = window.location.protocol; // http: oder https:
+            const hostname = window.location.hostname; // z.B. 192.168.1.50 oder localhost
+            const backendUrl = `${protocol}//${hostname}:3001/api/connect`;
+
+            const response = await fetch(backendUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(credentials)

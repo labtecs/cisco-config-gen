@@ -1,73 +1,68 @@
-Cisco Switchport Config Generator
+# 🧰 LabTecs Cisco Toolbox
 
-Ein modernes, webbasiertes Tool zur einfachen Erstellung, Visualisierung und Massenbearbeitung von Cisco Switchport-Konfigurationen. Entwickelt, um Netzwerktechnikern das Leben leichter zu machen und Konfigurationsfehler zu vermeiden.
+**Version:** v3.7
+**Tech Stack:** React (Vite), Node.js (Express), TailwindCSS, Docker
 
-Live Demo: (Hier könnte dein Link stehen, falls öffentlich)
+Die **Cisco Toolbox** ist eine moderne Web-Applikation für Netzwerk-Engineers. Sie vereint leistungsstarke Tools zur Automatisierung und Analyse von Cisco-Konfigurationen in einer einzigen, benutzerfreundlichen Oberfläche.
 
-Features
+---
 
-Visuelle Darstellung: Interaktive, grafische Ansicht von Switch-Stacks (bis zu 8 Member) und Ports. Klicke direkt auf die Ports, um sie auszuwählen!
+## 🚀 Features
 
-Config Import: Lade eine bestehende "show running-config" hoch. Das Tool parst die Datei und visualisiert deine aktuelle Port-Konfiguration automatisch.
+Die Toolbox besteht aus zwei Hauptmodulen:
 
-Bulk Edit (Massenbearbeitung): Wähle mehrere Ports gleichzeitig aus (via Checkbox, Shift-Klick oder Klick auf die Grafik), um VLANs, Port-Modi, Voice-VLANs oder Beschreibungen für alle gleichzeitig zu ändern.
+### 1. 🔌 Switchport Generator
+Ein visuelles Tool zum schnellen Erstellen und Bearbeiten von Switch-Konfigurationen.
+* **Switch Visualizer:** Grafische Darstellung von 8, 12, 24 oder 48-Port Switches (inkl. Stacks).
+* **SSH Import:** Verbinde dich direkt mit einem Switch und lade die `running-config` live.
+* **Running-Config Parser:** Lädt bestehende Config-Files und erkennt VLANs, Descriptions und Modi automatisch.
+* **Multi-Port Editor:** Bearbeite Hunderte von Ports gleichzeitig (VLANs, PoE, Voice, Security).
+* **Smart VLAN Filtering:** Erkennt automatisch genutzte und ungenutzte VLANs. Trunk-Ranges (z.B. `2-4094`) werden intelligent gruppiert.
 
-Live Preview: Generiert in Echtzeit kopierfertigen, sauberen Cisco IOS Code.
+### 2. 🛡️ ACL Inspector
+Ein Analyse-Tool für Firewall-Regelwerke und Access-Listen.
+* **Multi-Support:** Unterstützt Cisco IOS (Standard/Extended) und Cisco ASA Syntax.
+* **Traffic Simulation:** Gib Source-IP, Destination-IP und Port ein – das Tool prüft, ob das Paket durchkommt ("Permit" oder "Deny").
+* **Regel-Visualisierung:** Farbliche Hervorhebung von Treffern und Simulationen.
+* **Objekt-Auflösung:** Erkennt Wildcard-Masken und Subnetzmasken automatisch.
 
-Sicher & Offline-fähig: Die Anwendung läuft vollständig in deinem Browser (Client-Side). Keine sensiblen Konfigurationsdaten verlassen deinen Computer.
+---
 
-Installation & Nutzung
+## 🛠️ Installation & Start
 
-Methode 1: Docker (Empfohlen)
+Du hast zwei Möglichkeiten, das Projekt zu starten: Als Docker-Container (empfohlen) oder im Entwicklungs-Modus.
 
-Der einfachste Weg, die Anwendung zu hosten, ist über Docker.
+### Option A: Docker (Empfohlen für Nutzung)
+Das Projekt ist vollständig dockerisiert. Frontend und Backend starten mit einem Befehl.
 
-Repository klonen:
+1.  Repository klonen:
+    ```bash
+    git clone [https://github.com/labtecs/cisco-config-gen.git](https://github.com/labtecs/cisco-config-gen.git)
+    cd cisco-config-gen
+    ```
 
-git clone [https://github.com/labtecs/cisco-config-gen.git](https://github.com/labtecs/cisco-config-gen.git)
-cd cisco-config-gen
+2.  Container starten:
+    ```bash
+    docker-compose up --build -d
+    ```
 
+3.  App öffnen:
+    👉 **http://localhost:4949**
 
-Container starten:
+*(Das Backend läuft im Hintergrund auf Port 3001 und kommuniziert automatisch mit dem Frontend).*
 
-docker-compose up -d --build
+---
 
+### Option B: Manuell (Für Entwicklung)
+Wenn du am Code arbeiten möchtest, starte Frontend und Backend in separaten Terminals.
 
-Loslegen:
-Öffne deinen Browser und gehe auf http://localhost:4949.
+#### Voraussetzungen
+* Node.js (v18 oder neuer) installiert.
 
-Methode 2: Portainer (GUI)
+#### 1. Backend starten (SSH Service)
+Dieser Server wird benötigt, um SSH-Verbindungen zu Switches aufzubauen.
 
-Falls du Portainer verwendest, kannst du den Stack direkt aus dem Git-Repository deployen.
-
-Erstelle einen neuen Stack.
-
-Wähle Repository als Build-Methode.
-
-Repository URL: https://www.google.com/search?q=https://github.com/labtecs/cisco-config-gen.git
-
-Compose path: docker-compose.yml
-
-Klicke auf Deploy the stack.
-
-Methode 3: Manuell (Node.js)
-
-Für Entwicklung oder manuelles Hosting ohne Docker.
-
-Voraussetzungen: Node.js (v16 oder höher).
-
-Abhängigkeiten installieren:
-
+```bash
+# Im Hauptverzeichnis
 npm install
-
-
-Entwicklungsserver starten:
-
-npm run dev
-
-
-npm run build
-
-Lizenz
-
-Dieses Projekt ist Open Source. Feel free to fork, modify and distribute!
+node server.js
