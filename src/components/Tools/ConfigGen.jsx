@@ -219,6 +219,7 @@ export default function ConfigGen() {
                                     showFastColumn={logic.showFastColumn}
                                     showVoiceColumn={logic.showVoiceColumn}
                                     showStateColumn={logic.showStateColumn}
+                                    onEditPort={logic.switchToSingleEditor}
                                     // Bulk Props
                                     bulkMode={logic.bulkMode} setBulkMode={logic.setBulkMode}
                                     bulkAccessVlan={logic.bulkAccessVlan} setBulkAccessVlan={logic.setBulkAccessVlan}

@@ -29,7 +29,7 @@ export default function MultiPortEditor({
                                             bulkSecAgingTime, setBulkSecAgingTime,
                                             bulkSecAgingType, setBulkSecAgingType,
                                             showSecurityOptions, setShowSecurityOptions,
-                                            applyBulkEdit
+                                            onEditPort, applyBulkEdit
                                         }) {
     const selectedCount = selectedPortIds.size;
     const allIncluded = ports.length > 0 && ports.every(p => p.includeInConfig);
@@ -183,8 +183,13 @@ export default function MultiPortEditor({
                     }
 
                     return (
-                        <tr key={port.id} id={`row-${port.id}`} className={rowClasses}>
+                        <tr key={port.id}
+                            id={`row-${port.id}`}
+                            className={`${rowClasses} cursor-pointer`} // cursor-pointer für besseres Feeling
+                            // NEU: Hier ist der Doppelklick-Handler
+                            onDoubleClick={() => onEditPort(port.id)}>
                             <td className="p-2 text-center">
+
                                 <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked={isSelected} onChange={(e) => toggleSelection(port.id, e)}/>
                             </td>
                             <td className="p-2 text-center"><button onClick={() => toggleInclude(port.id)} className={`p-1.5 rounded-full transition-colors ${port.includeInConfig ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}><Power size={14} /></button></td>

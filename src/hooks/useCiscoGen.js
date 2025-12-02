@@ -536,6 +536,14 @@ export function useCiscoGen() {
         else { setSingleEditPortId(id); scrollToPreviewPort(id); }
     };
 
+    // Wechselt sofort in den Single-Editor für einen Port
+    const switchToSingleEditor = (id) => {
+        setSingleEditPortId(id);
+        setViewMode('single');
+        // Optional: Scrollt im Preview auch gleich zur richtigen Stelle
+        scrollToPreviewPort(id);
+    };
+
     const toggleSelection = (id, e) => {
         const newSet = new Set(selectedPortIds);
         const isShift = e && (e.shiftKey || (e.nativeEvent && e.nativeEvent.shiftKey));
@@ -739,6 +747,7 @@ export function useCiscoGen() {
         availableVlans, generatedConfig, singlePort,
         showConnectionBar, setShowConnectionBar,
         isConnecting, handleSSHConnect,
+        switchToSingleEditor,
 
         // Handlers
         resetToDefaults, handleFileUpload, updatePort, toggleInclude, toggleGlobalInclude,
