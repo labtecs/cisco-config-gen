@@ -193,10 +193,13 @@ export function useCiscoGen() {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
             if (match) typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
+
+            // --- VLAN PARSING LOGIC START ---
             if (trimmed.includes('switchport voice vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
                 const v = vlanPart?.split(/\s+/)[0];
                 if(v) { voiceVlanCounts[v] = (voiceVlanCounts[v] || 0) + 1; }
+
             }
             if (trimmed.includes('switchport access vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
@@ -205,6 +208,8 @@ export function useCiscoGen() {
             }
             const sviMatch = trimmed.match(/^interface Vlan\s?(\d+)/i);
             if (sviMatch && sviMatch[1]) foundVlans.add(sviMatch[1]);
+
+            // Das hier ist der wichtige Teil für "Ungenutzte" VLANs (aus der Datenbank)
             const l2Match = trimmed.match(/^vlan\s+(\d+)/i);
             if (l2Match && l2Match[1]) {
                 foundVlans.add(l2Match[1]);
@@ -214,7 +219,9 @@ export function useCiscoGen() {
                 detectedVlanNames[currentDefVlanId] = name;
             }
             if (trimmed.startsWith('interface') || trimmed === '!') currentDefVlanId = null;
+            // --- VLAN PARSING LOGIC END ---
         });
+
 
         const sortedTypes = Object.entries(typeCounts).sort((a,b) => b[1] - a[1]);
         let detBase = sortedTypes[0]?.[0] || 'GigabitEthernet';
@@ -230,6 +237,8 @@ export function useCiscoGen() {
             if (count > maxCount) { maxCount = count; detectedVoiceVlan = vlan; }
         });
         if (detectedVoiceVlan) setGlobalVoiceVlan(detectedVoiceVlan);
+
+        // Populate Detected VLANs state
         setDetectedVlans(Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)));
         setVlanNames(detectedVlanNames);
 
@@ -324,31 +333,67 @@ export function useCiscoGen() {
     useEffect(() => { generatePortList(); }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType, generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
-    // --- MEMOS ---
+// --- MEMOS ---
     const availableVlans = useMemo(() => {
         const activeOnPorts = new Set();
         const allVlans = new Set(detectedVlans);
+        const complexRanges = new Set(); // NEU: Speicher für Ranges
+
         ports.forEach(p => {
-            if (p.mode === 'access' && p.accessVlan) { activeOnPorts.add(p.accessVlan); allVlans.add(p.accessVlan); }
+            // 1. Access Ports (immer einzeln)
+            if (p.mode === 'access' && p.accessVlan) {
+                activeOnPorts.add(p.accessVlan);
+                allVlans.add(p.accessVlan);
+            }
+
+            // 2. Trunk Ports
             if (p.mode === 'trunk' && p.trunkVlans) {
                 const parsedTrunkVlans = parseVlanString(p.trunkVlans);
-                parsedTrunkVlans.forEach(v => { activeOnPorts.add(v); allVlans.add(v); });
+
+                // LOGIK: Ist es eine Riesen-Range? (z.B. > 50 VLANs)
+                if (parsedTrunkVlans.length >= 50) {
+                    // JA: Wir merken uns den String "2-4094" als eigenes Item
+                    complexRanges.add(p.trunkVlans);
+                } else {
+                    // NEIN: Wir fügen die VLANs einzeln hinzu (wie bisher)
+                    parsedTrunkVlans.forEach(v => {
+                        activeOnPorts.add(v);
+                        allVlans.add(v);
+                    });
+                }
             }
         });
+
         if (!allVlans.has('1')) allVlans.add('1');
 
-        return Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
-            const isDetected = detectedVlans.includes(vlan);
-            const isUsed = activeOnPorts.has(vlan);
-            const name = vlanNames[vlan];
+        // A. Einzelne VLANs sortieren
+        const singleVlans = Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
+            const strVlan = String(vlan);
+            const isDetected = detectedVlans.some(d => String(d) === strVlan);
+            const isUsed = activeOnPorts.has(strVlan);
+            const name = vlanNames[strVlan];
+
             let status = 'manual';
-            if (vlan === '1') {
-                status = 'default';
-            } else {
-                if (isDetected && isUsed) status = 'used'; else if (isDetected && !isUsed) status = 'unused';
-            }
-            return { id: vlan, status, name };
+            if (strVlan === '1') status = 'default';
+            else if (isDetected && isUsed) status = 'used';
+            else if (isDetected && !isUsed) status = 'unused';
+
+            return { id: strVlan, status, name, isRange: false };
         });
+
+        // B. Ranges hinzufügen
+        const rangeVlans = Array.from(complexRanges).map(rangeStr => {
+            return {
+                id: rangeStr, // Der Text auf dem Button, z.B. "2-4094"
+                status: 'used', // Ranges auf Trunks sind per Definition "used"
+                name: 'Large Trunk Range',
+                isRange: true
+            };
+        });
+
+        // C. Beides kombinieren (Ranges am Ende)
+        return [...singleVlans, ...rangeVlans];
+
     }, [detectedVlans, ports, vlanNames]);
 
     const handleFileUpload = (e) => {
@@ -519,7 +564,24 @@ export function useCiscoGen() {
     const selectPortsByVlan = (vlanId) => {
         if (viewMode === 'single') setViewMode('multi');
         const strVlanId = String(vlanId);
-        const matchingIds = ports.filter(p => String(p.accessVlan) === strVlanId && p.mode === 'access').map(p => p.id);
+
+        const matchingIds = ports.filter(p => {
+            // Case A: Access Port matcht genau dieses VLAN
+            if (p.mode === 'access' && String(p.accessVlan) === strVlanId) return true;
+
+            // Case B: Trunk Port hat genau diesen String (für Ranges wie "2-4094")
+            if (p.mode === 'trunk' && p.trunkVlans === strVlanId) return true;
+
+            // Case C: Trunk Port beinhaltet dieses einzelne VLAN (für kleine Trunks)
+            if (p.mode === 'trunk' && !p.trunkVlans.includes('-')) {
+                // Einfacher Check für Einzelwerte in Trunks
+                const parts = p.trunkVlans.split(',').map(s => s.trim());
+                if (parts.includes(strVlanId)) return true;
+            }
+
+            return false;
+        }).map(p => p.id);
+
         setSelectedPortIds(new Set(matchingIds));
         setLastSelectedId(null);
     };
@@ -591,6 +653,50 @@ export function useCiscoGen() {
         if (idx < ports.length - 1) { setSingleEditPortId(ports[idx + 1].id); scrollToPreviewPort(ports[idx + 1].id); }
     };
 
+    // SSH Connection State
+    const [showConnectionBar, setShowConnectionBar] = useState(false);
+    const [isConnecting, setIsConnecting] = useState(false);
+
+    // ... (restlicher Code) ...
+
+    // Neue Funktion für den Connect
+    const handleSSHConnect = async (credentials) => {
+        setIsConnecting(true);
+        console.log("Versuche Verbindung zu:", credentials.ip);
+
+        try {
+            const protocol = window.location.protocol; // http: oder https:
+            const hostname = window.location.hostname; // z.B. 192.168.1.50 oder localhost
+            const backendUrl = `${protocol}//${hostname}:3001/api/connect`;
+
+            const response = await fetch(backendUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(credentials)
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Verbindung fehlgeschlagen');
+            }
+
+            if (data.success && data.config) {
+                showToast(`Verbindung erfolgreich! Config geladen.`);
+                parseRunningConfig(data.config); // Config direkt in den Parser werfen
+                setShowConnectionBar(false); // Leiste schließen
+            } else {
+                throw new Error("Keine Config empfangen");
+            }
+
+        } catch (error) {
+            console.error("SSH Error:", error);
+            alert(`Fehler: ${error.message}\n\nStelle sicher, dass 'node server.js' läuft!`);
+        } finally {
+            setIsConnecting(false);
+        }
+    };
+
     return {
         // State
         switchModel, setSwitchModel,
@@ -631,6 +737,8 @@ export function useCiscoGen() {
         bulkSecAgingType, setBulkSecAgingType,
         showSecurityOptions, setShowSecurityOptions,
         availableVlans, generatedConfig, singlePort,
+        showConnectionBar, setShowConnectionBar,
+        isConnecting, handleSSHConnect,
 
         // Handlers
         resetToDefaults, handleFileUpload, updatePort, toggleInclude, toggleGlobalInclude,
