@@ -16,11 +16,12 @@ export default function App() {
     // State to track the currently active tool ('generator' or 'acl')
     const [activeTool, setActiveTool] = useState('generator');
     const [fileContent, setFileContent] = useState('');
+    const [dragActive, setDragActive] = useState(false);
+    const [showConnectionBar, setShowConnectionBar] = useState(false);
 
-    const handleGlobalUpload = (event) => {
-        const file = event.target.files[0];
+
+    const handleFile = (file) => {
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = (e) => {
             setFileContent(e.target.result);
@@ -28,9 +29,56 @@ export default function App() {
         reader.readAsText(file);
     };
 
+    const handleSshContent = (configText) => {
+        setFileContent(configText);
+    };
+
+    const handleGlobalUpload = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleFile(event.target.files[0]);
+    };
+
+    const handleDragEnter = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    };
+
+    const handleGlobalReset = () => {
+        if (window.confirm("Möchtest du wirklich alle geladenen Daten zurücksetzen?")) {
+            setFileContent('');
+        }
+    };
+
     return (
         // Root container for the entire application
-        <div className="min-h-screen bg-slate-100 font-sans flex flex-col">
+        <div className="min-h-screen bg-slate-100 font-sans flex flex-col"
+             onDragEnter={handleDragEnter}
+             onDragLeave={handleDragLeave}
+             onDragOver={handleDragOver}
+             onDrop={handleDrop}
+        >
 
             {/* Global navigation bar, sticky at the top */}
             <nav className="bg-slate-900 text-white border-b border-slate-700 sticky top-0 z-[100]">
@@ -74,7 +122,14 @@ export default function App() {
                     </div>
                 </div>
             </nav>
-            <GlobalHeader onUpload={handleGlobalUpload} />
+            <GlobalHeader
+                onUpload={handleGlobalUpload}
+                dragActive={dragActive}
+                showSshButton={activeTool === 'generator'}
+                onToggleConnect={() => setShowConnectionBar(!showConnectionBar)}
+                isConnectOpen={showConnectionBar}
+                onReset={handleGlobalReset}
+            />
 
 
             {/* Main content area where the active tool is rendered */}
@@ -82,7 +137,12 @@ export default function App() {
                 {/* Conditionally render the component based on the activeTool state */}
                 {activeTool === 'generator' ? (
                     <div className="animate-in fade-in duration-300">
-                        <ConfigGen fileContent={fileContent} />
+                        <ConfigGen
+                            fileContent={fileContent}
+                            showConnectionBar={showConnectionBar}
+                            setShowConnectionBar={setShowConnectionBar}
+                            onSshSuccess={handleSshContent}
+                        />
                     </div>
                 ) : (
                     <div className="animate-in fade-in duration-300">

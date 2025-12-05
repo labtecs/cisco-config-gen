@@ -11,18 +11,18 @@ import ConfigPreview from '../Editor/ConfigPreview';
 import SinglePortEditor from '../Editor/SinglePortEditor';
 import MultiPortEditor from '../Editor/MultiPortEditor';
 
-export default function ConfigGen({ fileContent }) {
+export default function ConfigGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess }) {
     const APP_VERSION = "v3.8";
-    const logic = useCiscoGen({ fileContent });
+    const logic = useCiscoGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess });
     const [showMaintenance, setShowMaintenance] = React.useState(false);
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
             {/* CONNECTION BAR - SLIDES IN */}
-            {logic.showConnectionBar && (
+            {showConnectionBar && (
                 <ConnectionBar
                     onConnect={logic.handleSSHConnect}
-                    onClose={() => logic.setShowConnectionBar(false)}
+                    onClose={() => setShowConnectionBar(false)}
                     isLoading={logic.isConnecting}
                 />
             )}

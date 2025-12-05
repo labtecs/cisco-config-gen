@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { isNumeric, isVlanRange, parseVlanString, expandInterfaceType } from '../utils/ciscoHelpers';
 
-export function useCiscoGen({ fileContent }) {
+export function useCiscoGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess }) {
     // --- STATE DEFINITIONS ---
     const [switchModel, setSwitchModel] = useState(48);
     const [uplinkCount, setUplinkCount] = useState(4);
@@ -74,48 +74,6 @@ export function useCiscoGen({ fileContent }) {
         setTimeout(() => setToast({ show: false, message: '' }), 3000);
     };
 
-    const rebuildFromMap = (naming, stack, model, upCount, map, baseType, upType) => {
-        let mergedPorts = [];
-        for (let s = 1; s <= stack; s++) {
-            for (let p = 1; p <= model; p++) {
-                let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
-                if (naming === 'simple' && stack > 1) genId = `${s}/0/${p}`;
-                const parsed = map.get(genId);
-                const name = parsed ? parsed.name : `${baseType}${genId}`;
-                if (parsed) {
-                    mergedPorts.push({ ...parsed, name, isUplink: false });
-                } else {
-                    mergedPorts.push({
-                        id: genId, name, description: '', mode: 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
-                        portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false,
-                        noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
-                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-                    });
-                }
-            }
-            for (let u = 1; u <= upCount; u++) {
-                let p = model + u;
-                let genId = naming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
-                if (naming === 'simple' && stack > 1) genId = `${s}/0/${p}`;
-                const parsed = map.get(genId);
-                const name = parsed ? parsed.name : `${upType}${genId}`;
-                if (parsed) {
-                    mergedPorts.push({ ...parsed, name, isUplink: true });
-                } else {
-                    mergedPorts.push({
-                        id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
-                        portfast: false, voiceVlan: '',
-                        includeInConfig: false,
-                        isUplink: true,
-                        noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
-                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-                    });
-                }
-            }
-        }
-        setPorts(mergedPorts);
-    };
-
     const createPortObject = (existingMap, stackMember, portNum, isUplink) => {
         const type = isUplink ? uplinkInterfaceType : baseInterfaceType;
         let portId = '';
@@ -165,6 +123,16 @@ export function useCiscoGen({ fileContent }) {
             return newPorts;
         });
     }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType]);
+
+    const resetState = useCallback(() => {
+        setHostname('');
+        setIosVersion('');
+        setDetectedVlans([]);
+        setVlanNames({});
+        setGlobalVoiceVlan('');
+        setPorts([]);
+        setTimeout(() => generatePortList(), 0);
+    }, [generatePortList]);
 
     const parseRunningConfig = (text) => {
         const hostnameMatch = text.match(/^hostname\s+([^\s]+)/m);
@@ -323,23 +291,57 @@ export function useCiscoGen({ fileContent }) {
         setStackSize(detectedStackSize);
         setSwitchModel(bestFitModel);
         setUplinkCount(uplinks);
-        rebuildFromMap(detectedNaming, detectedStackSize, bestFitModel, uplinks, newPortsMap, finalBaseType, finalUplinkType);
-    };
-
-    const resetToDefaults = () => {
-        if (window.confirm("Möchtest du wirklich alles zurücksetzen? Die Seite wird neu geladen.")) {
-            window.location.reload();
-        }
+        setPorts(currentPorts => {
+            let newPorts = [];
+            for (let s = 1; s <= detectedStackSize; s++) {
+                for (let p = 1; p <= bestFitModel; p++) {
+                    let genId = detectedNaming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
+                    if (detectedNaming === 'simple' && detectedStackSize > 1) genId = `${s}/0/${p}`;
+                    const parsed = newPortsMap.get(genId);
+                    const name = parsed ? parsed.name : `${finalBaseType}${genId}`;
+                    if (parsed) {
+                        newPorts.push({ ...parsed, name, isUplink: false });
+                    } else {
+                        newPorts.push({
+                            id: genId, name, description: '', mode: 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
+                            portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false,
+                            noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
+                            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+                        });
+                    }
+                }
+                for (let u = 1; u <= uplinks; u++) {
+                    let p = bestFitModel + u;
+                    let genId = detectedNaming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
+                    if (detectedNaming === 'simple' && detectedStackSize > 1) genId = `${s}/0/${p}`;
+                    const parsed = newPortsMap.get(genId);
+                    const name = parsed ? parsed.name : `${finalUplinkType}${genId}`;
+                    if (parsed) {
+                        newPorts.push({ ...parsed, name, isUplink: true });
+                    } else {
+                        newPorts.push({
+                            id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
+                            portfast: false, voiceVlan: '',
+                            includeInConfig: false,
+                            isUplink: true,
+                            noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
+                            portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+                        });
+                    }
+                }
+            }
+            return newPorts;
+        });
     };
 
     // --- EFFECTS ---
     useEffect(() => {
         if (fileContent) {
-            // Nur parsen, wenn der Inhalt auch nach einer Switch-Konfiguration aussieht.
-            // Eine einfache Prüfung auf "interface" oder "hostname" reicht oft schon aus.
             parseRunningConfig(fileContent);
+        } else {
+            resetState();
         }
-    }, [fileContent]);
+    }, [fileContent, resetState]);
 
     useEffect(() => { generatePortList(); }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType, generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
@@ -691,7 +693,6 @@ export function useCiscoGen({ fileContent }) {
     };
 
     // SSH Connection State
-    const [showConnectionBar, setShowConnectionBar] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
 
     // ... (restlicher Code) ...
@@ -720,7 +721,7 @@ export function useCiscoGen({ fileContent }) {
 
             if (data.success && data.config) {
                 showToast(`Verbindung erfolgreich! Config geladen.`);
-                parseRunningConfig(data.config); // Config direkt in den Parser werfen
+                onSshSuccess(data.config);
                 setShowConnectionBar(false); // Leiste schließen
             } else {
                 throw new Error("Keine Config empfangen");
@@ -776,12 +777,12 @@ export function useCiscoGen({ fileContent }) {
         bulkSecAgingType, setBulkSecAgingType,
         showSecurityOptions, setShowSecurityOptions,
         availableVlans, generatedConfig, singlePort,
-        showConnectionBar, setShowConnectionBar,
         isConnecting, handleSSHConnect,
         switchToSingleEditor,
+        resetState,
 
         // Handlers
-        resetToDefaults, updatePort, toggleInclude, toggleGlobalInclude,
+        updatePort, toggleInclude, toggleGlobalInclude,
         handleClearDescriptions, resetPortToDefault, toggleNoShut, toggleVoiceVlan,
         scrollToPreviewPort, handleVisualizerClick, toggleSelection, toggleSelectAll,
         selectPortsByVlan, applyBulkEdit, copyToClipboard, downloadFile,
