@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState} from 'react';
 import { Network, ShieldCheck, Box } from 'lucide-react';
 
 // Tools importieren
@@ -24,7 +24,9 @@ export default function App() {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            setFileContent(e.target.result);
+            if (typeof e.target.result === 'string') {
+                setFileContent(e.target.result);
+            }
         };
         reader.readAsText(file);
     };
