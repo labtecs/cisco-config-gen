@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { isNumeric, isVlanRange, parseVlanString, expandInterfaceType } from '../utils/ciscoHelpers';
 
-export function useCiscoGen() {
+export function useCiscoGen({ fileContent }) {
     // --- STATE DEFINITIONS ---
     const [switchModel, setSwitchModel] = useState(48);
     const [uplinkCount, setUplinkCount] = useState(4);
@@ -333,6 +333,14 @@ export function useCiscoGen() {
     };
 
     // --- EFFECTS ---
+    useEffect(() => {
+        if (fileContent) {
+            // Nur parsen, wenn der Inhalt auch nach einer Switch-Konfiguration aussieht.
+            // Eine einfache Prüfung auf "interface" oder "hostname" reicht oft schon aus.
+            parseRunningConfig(fileContent);
+        }
+    }, [fileContent]);
+
     useEffect(() => { generatePortList(); }, [switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType, generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
@@ -398,15 +406,6 @@ export function useCiscoGen() {
         return [...singleVlans, ...rangeVlans];
 
     }, [detectedVlans, ports, vlanNames]);
-
-    const handleFileUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => parseRunningConfig(event.target.result);
-        reader.readAsText(file);
-        e.target.value = null;
-    };
 
     const getPortConfigString = (port) => {
         let lines = [];
@@ -782,7 +781,7 @@ export function useCiscoGen() {
         switchToSingleEditor,
 
         // Handlers
-        resetToDefaults, handleFileUpload, updatePort, toggleInclude, toggleGlobalInclude,
+        resetToDefaults, updatePort, toggleInclude, toggleGlobalInclude,
         handleClearDescriptions, resetPortToDefault, toggleNoShut, toggleVoiceVlan,
         scrollToPreviewPort, handleVisualizerClick, toggleSelection, toggleSelectAll,
         selectPortsByVlan, applyBulkEdit, copyToClipboard, downloadFile,

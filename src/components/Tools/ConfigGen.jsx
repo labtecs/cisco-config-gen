@@ -4,7 +4,6 @@ import MaintenanceModal from './MaintenanceModal';
 // Components & Hooks
 // WICHTIG: Hier nur EIN Import mit dem korrekten Pfad (zwei Ebenen hoch)
 import { useCiscoGen } from '../../hooks/useCiscoGen';
-import Header from '../Layout/Header';
 import ConnectionBar from '../Layout/ConnectionBar';
 import SwitchVisualizer from '../Visualizer/SwitchVisualizer';
 import GlobalSettings from '../Controls/GlobalSettings';
@@ -12,21 +11,13 @@ import ConfigPreview from '../Editor/ConfigPreview';
 import SinglePortEditor from '../Editor/SinglePortEditor';
 import MultiPortEditor from '../Editor/MultiPortEditor';
 
-export default function ConfigGen() {
+export default function ConfigGen({ fileContent }) {
     const APP_VERSION = "v3.8";
-    const logic = useCiscoGen();
+    const logic = useCiscoGen({ fileContent });
     const [showMaintenance, setShowMaintenance] = React.useState(false);
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
-            <Header
-                version={APP_VERSION}
-                onReset={logic.resetToDefaults}
-                onUpload={logic.handleFileUpload}
-                onToggleConnect={() => logic.setShowConnectionBar(!logic.showConnectionBar)} // <--- NEU
-                isConnectOpen={logic.showConnectionBar} // <--- NEU
-            />
-
             {/* CONNECTION BAR - SLIDES IN */}
             {logic.showConnectionBar && (
                 <ConnectionBar

@@ -95,7 +95,7 @@ const checkPortMatch = (rulePorts, packetPort) => {
     return true;
 };
 
-const ConfigAnalyzer = () => {
+const ConfigAnalyzer = ({ fileContent }) => {
     const [rawConfig, setRawConfig] = useState('');
     const [acls, setAcls] = useState([]);
 
@@ -113,6 +113,12 @@ const ConfigAnalyzer = () => {
 
     const [expandedAcl, setExpandedAcl] = useState(null);
     const [dragActive, setDragActive] = useState(false);
+
+    useEffect(() => {
+        if (fileContent) {
+            setRawConfig(fileContent);
+        }
+    }, [fileContent]);
 
     useEffect(() => {
         if (!rawConfig) {
@@ -368,15 +374,6 @@ const ConfigAnalyzer = () => {
         setAcls(enrichedAcls);
     };
 
-    const handleFileUpload = (e) => {
-        e.preventDefault();
-        if (e.target.files && e.target.files[0]) {
-            const reader = new FileReader();
-            reader.onload = (ev) => setRawConfig(ev.target.result);
-            reader.readAsText(e.target.files[0]);
-        }
-    };
-
     // Robust Drag Handlers
     const handleDragEnter = (e) => {
         e.preventDefault();
@@ -506,52 +503,10 @@ const ConfigAnalyzer = () => {
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
-            {/* Header */}
-            <header className="bg-blue-900 text-white p-6 shadow-md">
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                        <ShieldCheck className="w-8 h-8 text-green-400" />
-                        <h1 className="text-2xl font-bold">Cisco ACL Inspector</h1>
-                    </div>
-                    <div className="text-sm text-blue-200">
-                        Unterstützt IOS Switch/Router & ASA Firewalls
-                    </div>
-                </div>
-            </header>
-
             <main className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
 
                 {/* Left Sidebar */}
                 <div className="lg:col-span-4 space-y-4">
-
-                    {/* File Upload */}
-                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                        <div className="p-4 bg-slate-100 border-b border-slate-200 font-semibold flex items-center">
-                            <FileText className="w-4 h-4 mr-2" /> Konfiguration
-                        </div>
-                        <div className="p-4">
-                            <div
-                                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${dragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400'}`}
-                                onDragEnter={handleDragEnter}
-                                onDragLeave={handleDragLeave}
-                                onDragOver={handleDragOver}
-                                onDrop={handleDrop}
-                            >
-                                <Upload className="w-8 h-8 mx-auto text-slate-400 mb-2 pointer-events-none" />
-                                <p className="text-sm text-slate-600 pointer-events-none">Drag & Drop Config File</p>
-                                <label className="mt-2 inline-block px-4 py-2 bg-blue-600 text-white text-sm rounded cursor-pointer hover:bg-blue-700 relative z-10">
-                                    Datei wählen
-                                    <input type="file" className="hidden" onChange={handleFileUpload} />
-                                </label>
-                            </div>
-                            <textarea
-                                className="w-full h-24 mt-4 p-3 text-xs font-mono bg-slate-900 text-green-400 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none resize-none"
-                                placeholder="Paste running-config (IOS or ASA) here..."
-                                value={rawConfig}
-                                onChange={(e) => setRawConfig(e.target.value)}
-                            ></textarea>
-                        </div>
-                    </div>
 
                     {/* SIMULATION TOOL */}
                     <div className="bg-white rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-blue-500">

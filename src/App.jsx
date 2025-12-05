@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Network, ShieldCheck, Box } from 'lucide-react';
 
 // Tools importieren
 import ConfigGen from './components/Tools/ConfigGen';
 import AclInspector from './components/Tools/AclInspector';
+import GlobalHeader from "./components/Layout/GlobalHeader.jsx";
 
 /**
  * The main application component.
@@ -14,6 +15,18 @@ import AclInspector from './components/Tools/AclInspector';
 export default function App() {
     // State to track the currently active tool ('generator' or 'acl')
     const [activeTool, setActiveTool] = useState('generator');
+    const [fileContent, setFileContent] = useState('');
+
+    const handleGlobalUpload = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            setFileContent(e.target.result);
+        };
+        reader.readAsText(file);
+    };
 
     return (
         // Root container for the entire application
@@ -61,17 +74,19 @@ export default function App() {
                     </div>
                 </div>
             </nav>
+            <GlobalHeader onUpload={handleGlobalUpload} />
+
 
             {/* Main content area where the active tool is rendered */}
             <div className="flex-1">
                 {/* Conditionally render the component based on the activeTool state */}
                 {activeTool === 'generator' ? (
                     <div className="animate-in fade-in duration-300">
-                        <ConfigGen />
+                        <ConfigGen fileContent={fileContent} />
                     </div>
                 ) : (
                     <div className="animate-in fade-in duration-300">
-                        <AclInspector />
+                        <AclInspector fileContent={fileContent} />
                     </div>
                 )}
             </div>
