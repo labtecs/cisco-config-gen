@@ -20,6 +20,9 @@ export function useCiscoGen() {
     const [includeNoShutdown, setIncludeNoShutdown] = useState(true);
     const [includeDescriptions, setIncludeDescriptions] = useState(true);
 
+    const [includeBaseConfig, setIncludeBaseConfig] = useState(true);
+    const [forcePoeReset, setForcePoeReset] = useState(false);
+
     // Port Data Structure
     const [ports, setPorts] = useState([]);
 
@@ -407,6 +410,7 @@ export function useCiscoGen() {
 
     const getPortConfigString = (port) => {
         let lines = [];
+        // Reset Logic
         if (port.resetOnly) {
             lines.push(`default interface ${port.name}`);
             return lines.join('\n');
@@ -414,34 +418,60 @@ export function useCiscoGen() {
         if (port.prependDefault) {
             lines.push(`default interface ${port.name}`);
         }
+
         lines.push(`interface ${port.name}`);
-        if (includeDescriptions && port.description) lines.push(` description ${port.description}`);
-        if (port.mode === 'access') {
-            lines.push(` switchport mode access`);
-            if (port.accessVlan) lines.push(` switchport access vlan ${port.accessVlan}`);
-            if (port.voiceVlan) lines.push(` switchport voice vlan ${port.voiceVlan}`);
-            if (port.portSecurity) {
-                lines.push(` switchport port-security`);
-                if (port.secMax > 1) lines.push(` switchport port-security maximum ${port.secMax}`);
-                if (port.secViolation !== 'shutdown') lines.push(` switchport port-security violation ${port.secViolation}`);
-                if (port.secSticky) lines.push(` switchport port-security mac-address sticky`);
-                if (port.secAgingTime > 0) {
-                    lines.push(` switchport port-security aging time ${port.secAgingTime}`);
-                    lines.push(` switchport port-security aging type ${port.secAgingType}`);
-                }
+
+        // 1. BASIS-KONFIGURATION (Nur wenn Checkbox an ist)
+        if (includeBaseConfig) {
+            if (includeDescriptions && port.description) lines.push(` description ${port.description}`);
+
+            if (port.mode === 'access') {
+                lines.push(` switchport mode access`);
+                if (port.accessVlan) lines.push(` switchport access vlan ${port.accessVlan}`);
+                if (port.voiceVlan) lines.push(` switchport voice vlan ${port.voiceVlan}`);
+            } else if (port.mode === 'trunk') {
+                lines.push(` switchport mode trunk`);
+                if (port.trunkVlans && port.trunkVlans.toLowerCase() !== 'all') lines.push(` switchport trunk allowed vlan ${port.trunkVlans}`);
+                if (port.nativeVlan && port.nativeVlan != 1) lines.push(` switchport trunk native vlan ${port.nativeVlan}`);
             }
-        } else if (port.mode === 'trunk') {
-            lines.push(` switchport mode trunk`);
-            if (port.trunkVlans && port.trunkVlans.toLowerCase() !== 'all') lines.push(` switchport trunk allowed vlan ${port.trunkVlans}`);
-            if (port.nativeVlan && port.nativeVlan != 1) lines.push(` switchport trunk native vlan ${port.nativeVlan}`);
         }
-        if (port.poeMode && port.poeMode !== 'auto') { lines.push(` power inline ${port.poeMode}`); }
-        if (port.portfast) { lines.push(useModernPortfast ? ` spanning-tree portfast edge` : ` spanning-tree portfast`); }
+
+        // 2. POE KONFIGURATION (Separat behandelt)
+        if (port.poeMode === 'never') {
+            lines.push(` power inline never`);
+        } else if (port.poeMode === 'static') {
+            lines.push(` power inline static`);
+        } else if (port.poeMode === 'auto') {
+            // SPEZIAL-LOGIK: Wenn "Force Reset" an ist
+            if (forcePoeReset) {
+                lines.push(` no power inline never`);
+            }
+        }
+
+        // 3. SECURITY (Nur mit Base Config sinnvoll)
+        if (includeBaseConfig && port.mode === 'access' && port.portSecurity) {
+            lines.push(` switchport port-security`);
+            if (port.secMax > 1) lines.push(` switchport port-security maximum ${port.secMax}`);
+            if (port.secViolation !== 'shutdown') lines.push(` switchport port-security violation ${port.secViolation}`);
+            if (port.secSticky) lines.push(` switchport port-security mac-address sticky`);
+            if (port.secAgingTime > 0) {
+                lines.push(` switchport port-security aging time ${port.secAgingTime}`);
+                lines.push(` switchport port-security aging type ${port.secAgingType}`);
+            }
+        }
+
+        // 4. PORTFAST (Nur mit Base Config)
+        if (includeBaseConfig && port.portfast) {
+            lines.push(useModernPortfast ? ` spanning-tree portfast edge` : ` spanning-tree portfast`);
+        }
+
+        // 5. SHUTDOWN STATE (Immer wichtig)
         if (includeNoShutdown) {
             if (port.noShutdown) lines.push(` no shutdown`); else lines.push(` shutdown`);
         } else {
             if (!port.noShutdown) lines.push(` shutdown`);
         }
+
         lines.push(` exit`);
         return lines.join('\n');
     };
@@ -455,7 +485,7 @@ export function useCiscoGen() {
         output += "end\n";
         if (includeWrMem) { output += "wr mem\n"; }
         return output;
-    }, [ports, includeWrMem, useModernPortfast, includeNoShutdown, includeDescriptions]);
+    }, [ports, includeWrMem, useModernPortfast, includeNoShutdown, includeDescriptions, includeBaseConfig, forcePoeReset]);
 
     const updatePort = (id, field, value) => {
         if (['accessVlan', 'voiceVlan', 'nativeVlan'].includes(field)) { if (!isNumeric(value)) return; }
@@ -719,6 +749,8 @@ export function useCiscoGen() {
         useModernPortfast, setUseModernPortfast,
         includeNoShutdown, setIncludeNoShutdown,
         includeDescriptions, setIncludeDescriptions,
+        includeBaseConfig, setIncludeBaseConfig,
+        forcePoeReset, setForcePoeReset,
         ports,
         viewMode, setViewMode,
         singleEditPortId, setSingleEditPortId,

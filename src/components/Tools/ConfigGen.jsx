@@ -1,10 +1,9 @@
 import React from 'react';
 import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter, Activity } from 'lucide-react';
-
+import MaintenanceModal from './MaintenanceModal';
 // Components & Hooks
 // WICHTIG: Hier nur EIN Import mit dem korrekten Pfad (zwei Ebenen hoch)
 import { useCiscoGen } from '../../hooks/useCiscoGen';
-
 import Header from '../Layout/Header';
 import ConnectionBar from '../Layout/ConnectionBar';
 import SwitchVisualizer from '../Visualizer/SwitchVisualizer';
@@ -16,6 +15,7 @@ import MultiPortEditor from '../Editor/MultiPortEditor';
 export default function ConfigGen() {
     const APP_VERSION = "v3.8";
     const logic = useCiscoGen();
+    const [showMaintenance, setShowMaintenance] = React.useState(false);
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
@@ -37,16 +37,16 @@ export default function ConfigGen() {
             )}
 
             <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-8">
-                {/* CONTROLS */}
-                <GlobalSettings
-                    switchModel={logic.switchModel} setSwitchModel={logic.setSwitchModel}
-                    uplinkCount={logic.uplinkCount} setUplinkCount={logic.setUplinkCount}
-                    stackSize={logic.stackSize} setStackSize={logic.setStackSize}
-                    portNaming={logic.portNaming} setPortNaming={logic.setPortNaming}
-                    baseInterfaceType={logic.baseInterfaceType} setBaseInterfaceType={logic.setBaseInterfaceType}
-                    uplinkInterfaceType={logic.uplinkInterfaceType} setUplinkInterfaceType={logic.setUplinkInterfaceType}
-                    globalVoiceVlan={logic.globalVoiceVlan} setGlobalVoiceVlan={logic.setGlobalVoiceVlan}
-                />
+                     {/* CONTROLS */}
+                    <GlobalSettings
+                        switchModel={logic.switchModel} setSwitchModel={logic.setSwitchModel}
+                        uplinkCount={logic.uplinkCount} setUplinkCount={logic.setUplinkCount}
+                        stackSize={logic.stackSize} setStackSize={logic.setStackSize}
+                        portNaming={logic.portNaming} setPortNaming={logic.setPortNaming}
+                        baseInterfaceType={logic.baseInterfaceType} setBaseInterfaceType={logic.setBaseInterfaceType}
+                        uplinkInterfaceType={logic.uplinkInterfaceType} setUplinkInterfaceType={logic.setUplinkInterfaceType}
+                        globalVoiceVlan={logic.globalVoiceVlan} setGlobalVoiceVlan={logic.setGlobalVoiceVlan}
+                    />
 
                 {/* VISUALIZER */}
                 <SwitchVisualizer
@@ -267,6 +267,10 @@ export default function ConfigGen() {
                         useModernPortfast={logic.useModernPortfast} setUseModernPortfast={logic.setUseModernPortfast}
                         includeNoShutdown={logic.includeNoShutdown} setIncludeNoShutdown={logic.setIncludeNoShutdown}
                         includeDescriptions={logic.includeDescriptions} setIncludeDescriptions={logic.setIncludeDescriptions}
+                        includeBaseConfig={logic.includeBaseConfig}
+                        setIncludeBaseConfig={logic.setIncludeBaseConfig}
+                        forcePoeReset={logic.forcePoeReset}
+                        setForcePoeReset={logic.setForcePoeReset}
                         version={APP_VERSION}
                     />
 
@@ -278,6 +282,13 @@ export default function ConfigGen() {
                         </div>
                     )}
                 </div>
+                    {showMaintenance && (
+                        <MaintenanceModal
+                            ports={logic.ports}
+                            availableVlans={logic.availableVlans}
+                            onClose={() => setShowMaintenance(false)}
+                        />
+                    )}
             </main>
         </div>
     );
