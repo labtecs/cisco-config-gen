@@ -116,16 +116,14 @@ export function useConfigGeneration({
     const createInterfaceRangeString = (interfaces) => {
         if (!interfaces || interfaces.length === 0) return { ranges: [], singles: [] };
 
-        // Group interfaces by their type prefix (e.g., "GigabitEthernet1/0/")
         const groups = interfaces.reduce((acc, name) => {
-            const match = name.match(/^([a-zA-Z]+)(\d+\/\d+\/|\d+\/)/); // Matches "1/0/" or "0/"
+            const match = name.match(/^([a-zA-Z]+)(\d+\/\d+\/|\d+\/)/);
             if (match) {
-                const prefix = match[1] + match[2]; // e.g. "GigabitEthernet1/0/"
+                const prefix = match[1] + match[2];
                 const portNum = parseInt(name.substring(prefix.length));
                 if (!acc[prefix]) acc[prefix] = [];
                 acc[prefix].push(portNum);
             } else {
-                // Fallback for interfaces that can't be ranged (e.g., Vlan, Loopback)
                 if (!acc['single']) acc['single'] = [];
                 acc['single'].push(name);
             }
@@ -133,27 +131,26 @@ export function useConfigGeneration({
         }, {});
 
         const rangeCommands = [];
-
         for (const prefix in groups) {
             if (prefix === 'single') continue;
 
             const ports = groups[prefix].sort((a, b) => a - b);
             if (ports.length === 0) continue;
 
-            let rangeStr = '';
             let start = ports[0];
-
             for (let i = 1; i <= ports.length; i++) {
                 if (i === ports.length || ports[i] !== ports[i - 1] + 1) {
                     const end = ports[i - 1];
-                    if (rangeStr) rangeStr += ', ';
-                    rangeStr += start === end ? `${start}` : `${start} - ${end}`;
+                    const interfaceType = prefix.match(/^[a-zA-Z]+/)[0];
+                    const slotInfo = prefix.substring(interfaceType.length);
+                    if (start === end) {
+                        rangeCommands.push(`interface ${expandInterfaceType(interfaceType)}${slotInfo}${start}`);
+                    } else {
+                        rangeCommands.push(`interface range ${expandInterfaceType(interfaceType)} ${slotInfo}${start} - ${end}`);
+                    }
                     if (i < ports.length) start = ports[i];
                 }
             }
-            const interfaceType = prefix.match(/^[a-zA-Z]+/)[0];
-            const slotInfo = prefix.substring(interfaceType.length);
-            rangeCommands.push(`interface range ${expandInterfaceType(interfaceType)} ${slotInfo}${rangeStr}`);
         }
 
         return { ranges: rangeCommands, singles: groups['single'] || [] };
@@ -166,7 +163,6 @@ export function useConfigGeneration({
         let output = "! Generated Switchport Config\n";
 
         if (!useRangeCommands) {
-            // If not using range commands, generate individual config for each port.
             const singlePortConfigs = includedPorts.map(port => getPortConfigString(port));
             singlePortConfigs.sort((a, b) => {
                 const aName = a.match(/^interface\s(.+)/m)?.[1];
@@ -175,16 +171,14 @@ export function useConfigGeneration({
             });
             output += singlePortConfigs.join("\n\n") + "\n\n";
         } else {
-            // Helper to create a config signature for a port.
             const getConfigSignature = (port) => {
                 const {
                     id, name, bulkGroupId, isUplink, includeInConfig,
                     ...configProps
                 } = port;
-                return JSON.stringify(Object.entries(configProps).sort()); // Sort for stable signature
+                return JSON.stringify(Object.entries(configProps).sort());
             };
 
-            // 1. Group all included ports by their configuration signature.
             const configGroups = new Map();
             includedPorts.forEach(port => {
                 const signature = getConfigSignature(port);
@@ -195,33 +189,24 @@ export function useConfigGeneration({
             });
 
             const singlePortConfigs = [];
-
-            // 2. Process each group.
             configGroups.forEach(portGroup => {
-                if (portGroup.length > 1) {
-                    const representativePort = portGroup[0];
-                    const configBody = getPortConfigString(representativePort).split('\n').slice(1, -1).join('\n');
-                    const interfaceNames = portGroup.map(p => p.name);
-                    const { ranges, singles } = createInterfaceRangeString(interfaceNames);
+                const representativePort = portGroup[0];
+                const configBody = getPortConfigString(representativePort).split('\n').slice(1, -1).join('\n');
+                const interfaceNames = portGroup.map(p => p.name);
+                const { ranges, singles } = createInterfaceRangeString(interfaceNames);
 
-                    ranges.forEach(rangeCmd => {
-                        output += `${rangeCmd}\n${configBody}\n exit\n\n`;
-                    });
+                ranges.forEach(rangeCmd => {
+                    output += `${rangeCmd}\n${configBody}\n exit\n\n`;
+                });
 
-                    // Non-rangeable ports are treated as singles.
-                    singles.forEach(singleName => {
-                        const singlePort = portGroup.find(p => p.name === singleName);
-                        if (singlePort) {
-                            singlePortConfigs.push(getPortConfigString(singlePort));
-                        }
-                    });
-                } else {
-                    // Groups of one are just single ports.
-                    singlePortConfigs.push(getPortConfigString(portGroup[0]));
-                }
+                singles.forEach(singleName => {
+                    const singlePort = portGroup.find(p => p.name === singleName);
+                    if (singlePort) {
+                        singlePortConfigs.push(getPortConfigString(singlePort));
+                    }
+                });
             });
 
-            // 3. Process all single ports, sort them for predictable output, and add to the final config.
             singlePortConfigs.sort((a, b) => {
                 const aName = a.match(/^interface\s(.+)/m)?.[1];
                 const bName = b.match(/^interface\s(.+)/m)?.[1];
@@ -232,7 +217,6 @@ export function useConfigGeneration({
             }
         }
 
-        // Final cleanup and additions
         output = output.trim() + "\n\nend\n";
         if (includeWrMem) { output += "wr mem\n"; }
         return output;

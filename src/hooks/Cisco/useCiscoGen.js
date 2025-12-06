@@ -61,7 +61,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     const { selectedPortIds, toggleSelection, toggleSelectAll, selectPortsByVlan, clearSelection } = useSelection(ports);
     const { bulkState, setBulkState, applyBulkEdit } = useBulkEdit({ setPorts, selectedPortIds, globalVoiceVlan });
     const { generatedConfig } = useConfigGeneration({ ports, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands });
-    const { parseRunningConfig } = useConfigParsing({ setHostname, setIosVersion, setUseModernPortfast, setDetectedVlans, setVlanNames, setGlobalVoiceVlan, setPortNaming, setStackSize, setSwitchModel, setUplinkCount, setBaseInterfaceType, setUplinkInterfaceType, setPorts });
+    const { parseRunningConfig } = useConfigParsing();
 
     // --- HELPERS ---
     const showToast = (msg) => {
@@ -82,11 +82,24 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     // --- EFFECTS ---
     useEffect(() => {
         if (fileContent) {
-            parseRunningConfig(fileContent);
+            const parsedData = parseRunningConfig(fileContent);
+            setHostname(parsedData.hostname);
+            setIosVersion(parsedData.iosVersion);
+            setUseModernPortfast(parsedData.useModernPortfast);
+            setDetectedVlans(parsedData.detectedVlans);
+            setVlanNames(parsedData.vlanNames);
+            setGlobalVoiceVlan(parsedData.globalVoiceVlan);
+            setPortNaming(parsedData.portNaming);
+            setStackSize(parsedData.stackSize);
+            setSwitchModel(parsedData.switchModel);
+            setUplinkCount(parsedData.uplinkCount);
+            setBaseInterfaceType(parsedData.baseInterfaceType);
+            setUplinkInterfaceType(parsedData.uplinkInterfaceType);
+            setPorts(parsedData.ports);
         } else {
             resetState();
         }
-    }, [fileContent, parseRunningConfig, resetState]);
+    }, [fileContent, parseRunningConfig, resetState, setPorts]);
 
     useEffect(() => { generatePortList(); }, [generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);

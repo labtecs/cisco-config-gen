@@ -3,37 +3,13 @@ import { expandInterfaceType } from '../../utils/ciscoHelpers';
 
 /**
  * Manages the parsing of a running-config file.
- * @param {object} props - The props for the hook.
  * @returns {object} The parsing function.
  */
-export function useConfigParsing({
-    setHostname,
-    setIosVersion,
-    setUseModernPortfast,
-    setDetectedVlans,
-    setVlanNames,
-    setGlobalVoiceVlan,
-    setPortNaming,
-    setStackSize,
-    setSwitchModel,
-    setUplinkCount,
-    setBaseInterfaceType,
-    setUplinkInterfaceType,
-    setPorts
-}) {
+export function useConfigParsing() {
     const parseRunningConfig = useCallback((text) => {
         const hostnameMatch = text.match(/^hostname\s+(\S+)/m);
-        if (hostnameMatch && hostnameMatch[1]) setHostname(hostnameMatch[1]); else setHostname('');
         const versionMatch = text.match(/^version\s+(\d+\.?\d*)/m);
-        if (versionMatch && versionMatch[1]) {
-            const verStr = versionMatch[1];
-            setIosVersion(verStr);
-            setUseModernPortfast(parseFloat(verStr) >= 15.0);
-        } else {
-            setIosVersion('');
-        }
-        if (text.includes('spanning-tree portfast edge')) setUseModernPortfast(true);
-        else if (text.includes('spanning-tree portfast')) setUseModernPortfast(false);
+        const useModernPortfast = text.includes('spanning-tree portfast edge');
 
         const lines = text.split('\n');
         let newPortsMap = new Map();
@@ -50,14 +26,14 @@ export function useConfigParsing({
         lines.forEach(line => {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
-            if (match) typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
+            if (match && !match[1].toLowerCase().includes('vlan')) {
+                typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
+            }
 
-            // --- VLAN PARSING LOGIC START ---
             if (trimmed.includes('switchport voice vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
                 const v = vlanPart?.split(/\s+/)[0];
                 if(v) { voiceVlanCounts[v] = (voiceVlanCounts[v] || 0) + 1; }
-
             }
             if (trimmed.includes('switchport access vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
@@ -67,7 +43,6 @@ export function useConfigParsing({
             const sviMatch = trimmed.match(/^interface Vlan\s?(\d+)/i);
             if (sviMatch && sviMatch[1]) foundVlans.add(sviMatch[1]);
 
-            // Das hier ist der wichtige Teil für "Ungenutzte" VLANs (aus der Datenbank)
             const l2Match = trimmed.match(/^vlan\s+(\d+)/i);
             if (l2Match && l2Match[1]) {
                 foundVlans.add(l2Match[1]);
@@ -76,28 +51,20 @@ export function useConfigParsing({
                 detectedVlanNames[currentDefVlanId] = trimmed.substring(5).trim();
             }
             if (trimmed.startsWith('interface') || trimmed === '!') currentDefVlanId = null;
-            // --- VLAN PARSING LOGIC END ---
         });
 
-
-        const sortedTypes = Object.entries(typeCounts).sort((a,b) => b[1] - a[1]);
+        const sortedTypes = Object.entries(typeCounts).sort(([,a],[,b]) => b - a);
         let detBase = sortedTypes[0]?.[0] || 'GigabitEthernet';
         let detUplink = sortedTypes[1]?.[0] || detBase;
 
         const finalBaseType = expandInterfaceType(detBase);
         const finalUplinkType = expandInterfaceType(detUplink);
-        setBaseInterfaceType(finalBaseType);
-        setUplinkInterfaceType(finalUplinkType);
+
         let maxCount = 0;
         let detectedVoiceVlan = '';
         Object.entries(voiceVlanCounts).forEach(([vlan, count]) => {
             if (count > maxCount) { maxCount = count; detectedVoiceVlan = vlan; }
         });
-        if (detectedVoiceVlan) setGlobalVoiceVlan(detectedVoiceVlan);
-
-        // Populate Detected VLANs state
-        setDetectedVlans(Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)));
-        setVlanNames(detectedVlanNames);
 
         let currentInterface = null;
         lines.forEach(line => {
@@ -173,10 +140,6 @@ export function useConfigParsing({
         else if (detectedMaxPort <= 16) { bestFitModel = 16; uplinks = 2; }
         else if (detectedMaxPort <= 24) { bestFitModel = 24; uplinks = 4; }
         else { bestFitModel = 48; uplinks = 4; }
-        setPortNaming(detectedNaming);
-        setStackSize(detectedStackSize);
-        setSwitchModel(bestFitModel);
-        setUplinkCount(uplinks);
 
         const newPorts = [];
         for (let s = 1; s <= detectedStackSize; s++) {
@@ -216,8 +179,23 @@ export function useConfigParsing({
                 }
             }
         }
-        setPorts(newPorts);
-    }, [setHostname, setIosVersion, setUseModernPortfast, setDetectedVlans, setVlanNames, setGlobalVoiceVlan, setPortNaming, setStackSize, setSwitchModel, setUplinkCount, setBaseInterfaceType, setUplinkInterfaceType, setPorts]);
+
+        return {
+            hostname: hostnameMatch?.[1] || '',
+            iosVersion: versionMatch?.[1] || '',
+            useModernPortfast,
+            detectedVlans: Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)),
+            vlanNames: detectedVlanNames,
+            globalVoiceVlan: detectedVoiceVlan,
+            portNaming: detectedNaming,
+            stackSize: detectedStackSize,
+            switchModel: bestFitModel,
+            uplinkCount: uplinks,
+            baseInterfaceType: finalBaseType,
+            uplinkInterfaceType: finalUplinkType,
+            ports: newPorts,
+        };
+    }, []);
 
     return { parseRunningConfig };
 }

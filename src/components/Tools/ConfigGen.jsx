@@ -12,7 +12,7 @@ import SinglePortEditor from '../Editor/SinglePortEditor';
 import MultiPortEditor from '../Editor/MultiPortEditor';
 
 export default function ConfigGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess }) {
-    const APP_VERSION = "v3.8";
+    const APP_VERSION = "v4.0";
     const logic = useCiscoGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess });
     const [showMaintenance, setShowMaintenance] = React.useState(false);
 

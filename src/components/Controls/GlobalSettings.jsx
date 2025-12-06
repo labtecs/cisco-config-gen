@@ -57,6 +57,9 @@ export default function GlobalSettings({
                     <option value="GigabitEthernet">GigabitEthernet</option>
                     <option value="FastEthernet">FastEthernet</option>
                     <option value="TenGigabitEthernet">TenGigabitEthernet</option>
+                    <option value="TwentyFiveGigE">TwentyFiveGigE</option>
+                    <option value="FortyGigabitEthernet">FortyGigabitEthernet</option>
+                    <option value="Ethernet">Ethernet</option>
                 </select>
             </div>
             <div className="space-y-2">
@@ -66,6 +69,7 @@ export default function GlobalSettings({
                     <option value="TenGigabitEthernet">TenGigabitEthernet</option>
                     <option value="TwentyFiveGigE">TwentyFiveGigE</option>
                     <option value="FortyGigabitEthernet">FortyGigabitEthernet</option>
+                    <option value="Ethernet">Ethernet</option>
                 </select>
             </div>
             <div className="space-y-2">
