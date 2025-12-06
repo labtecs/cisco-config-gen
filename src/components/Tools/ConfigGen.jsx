@@ -3,7 +3,7 @@ import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter, Activity }
 import MaintenanceModal from './MaintenanceModal';
 // Components & Hooks
 // WICHTIG: Hier nur EIN Import mit dem korrekten Pfad (zwei Ebenen hoch)
-import { useCiscoGen } from '../../hooks/useCiscoGen';
+import { useCiscoGen } from '../../hooks/Cisco/useCiscoGen.js';
 import ConnectionBar from '../Layout/ConnectionBar';
 import SwitchVisualizer from '../Visualizer/SwitchVisualizer';
 import GlobalSettings from '../Controls/GlobalSettings';
@@ -198,12 +198,17 @@ export default function ConfigGen({ fileContent, showConnectionBar, setShowConne
                             {logic.viewMode === 'multi' && (
                                 <MultiPortEditor
                                     ports={logic.ports}
-                                    selectedPortIds={logic.selectedPortIds} setSelectedPortIds={logic.setSelectedPortIds}
-                                    toggleSelection={logic.toggleSelection} toggleSelectAll={logic.toggleSelectAll}
-                                    toggleInclude={logic.toggleInclude} toggleGlobalInclude={logic.toggleGlobalInclude}
+                                    selectedPortIds={logic.selectedPortIds}
+                                    clearSelection={logic.clearSelection}
+                                    toggleSelection={logic.toggleSelection}
+                                    toggleSelectAll={logic.toggleSelectAll}
+                                    toggleInclude={logic.toggleInclude}
+                                    toggleGlobalInclude={logic.toggleGlobalInclude}
                                     updatePort={logic.updatePort}
-                                    handleClearDescriptions={logic.handleClearDescriptions} confirmClearDesc={logic.confirmClearDesc}
-                                    toggleNoShut={logic.toggleNoShut} toggleVoiceVlan={logic.toggleVoiceVlan}
+                                    handleClearDescriptions={logic.handleClearDescriptions}
+                                    confirmClearDesc={logic.confirmClearDesc}
+                                    toggleNoShut={logic.toggleNoShut}
+                                    toggleVoiceVlan={logic.toggleVoiceVlan}
                                     scrollToPreviewPort={logic.scrollToPreviewPort}
                                     showPoeColumn={logic.showPoeColumn}
                                     showSecColumn={logic.showSecColumn}
@@ -258,6 +263,7 @@ export default function ConfigGen({ fileContent, showConnectionBar, setShowConne
                         useModernPortfast={logic.useModernPortfast} setUseModernPortfast={logic.setUseModernPortfast}
                         includeNoShutdown={logic.includeNoShutdown} setIncludeNoShutdown={logic.setIncludeNoShutdown}
                         includeDescriptions={logic.includeDescriptions} setIncludeDescriptions={logic.setIncludeDescriptions}
+                        useRangeCommands={logic.useRangeCommands} setUseRangeCommands={logic.setUseRangeCommands}
                         includeBaseConfig={logic.includeBaseConfig}
                         setIncludeBaseConfig={logic.setIncludeBaseConfig}
                         forcePoeReset={logic.forcePoeReset}

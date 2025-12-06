@@ -4,7 +4,7 @@ import { isNumeric } from '../../utils/ciscoHelpers';
 
 export default function MultiPortEditor({
                                             ports,
-                                            selectedPortIds, setSelectedPortIds,
+                                            selectedPortIds, clearSelection,
                                             toggleSelection, toggleSelectAll,
                                             toggleInclude, toggleGlobalInclude,
                                             updatePort,
@@ -43,7 +43,7 @@ export default function MultiPortEditor({
                         <div className="flex items-center gap-2 border-r border-blue-700 pr-4 mr-1">
                             <span className="bg-blue-600 text-xs font-bold px-2 py-1 rounded-full">{selectedCount}</span>
                             <span className="text-sm font-semibold whitespace-nowrap">Selected</span>
-                            <button onClick={() => setSelectedPortIds(new Set())} className="text-blue-300 hover:text-white"><X size={14}/></button>
+                            <button onClick={clearSelection} className="text-blue-300 hover:text-white"><X size={14}/></button>
                         </div>
                         <select className="bg-blue-800 border-blue-700 rounded text-xs p-1.5 focus:ring-1 focus:ring-blue-400" value={bulkMode} onChange={(e) => setBulkMode(e.target.value)}>
                             <option value="">Mode (No Change)</option>
@@ -238,7 +238,7 @@ export default function MultiPortEditor({
                                     {port.mode === 'access' ? (
                                         <div className="flex items-center gap-2">
                                             <input type="checkbox" className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" title="Enable Voice VLAN" checked={!!port.voiceVlan} onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
-                                            {port.voiceVlan ? <input type="text" maxLength={4} className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/> : <span className="text-[10px] text-slate-300 italic">No Voice</span>}
+                                            {port.voiceVlan ? <input type="text" maxLength={4} className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInCofig && !isSelected}/> : <span className="text-[10px] text-slate-300 italic">No Voice</span>}
                                         </div>
                                     ) : (
                                         <div className="flex items-center gap-1"><span className="text-[10px] text-slate-400">Native:</span><input type="text" maxLength={4} className="w-12 p-1 text-xs border border-slate-200 rounded" value={port.nativeVlan} onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></div>

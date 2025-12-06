@@ -18,6 +18,8 @@ import { Terminal, Copy, Save, Shield, Wrench } from 'lucide-react';
  * @param {(value: boolean) => void} props.setIncludeNoShutdown - State setter for includeNoShutdown.
  * @param {boolean} props.includeDescriptions - State for including interface descriptions.
  * @param {(value: boolean) => void} props.setIncludeDescriptions - State setter for includeDescriptions.
+ * @param {boolean} props.useRangeCommands - State for using 'interface range' commands.
+ * @param {(value: boolean) => void} props.setUseRangeCommands - State setter for useRangeCommands.
  * @param {boolean} props.includeBaseConfig - State for including base configuration (VLAN, mode).
  * @param {(value: boolean) => void} props.setIncludeBaseConfig - State setter for includeBaseConfig.
  * @param {boolean} props.forcePoeReset - State for forcing 'no power inline never'.
@@ -33,6 +35,7 @@ export default function ConfigPreview({
                                           useModernPortfast, setUseModernPortfast,
                                           includeNoShutdown, setIncludeNoShutdown,
                                           includeDescriptions, setIncludeDescriptions,
+                                          useRangeCommands, setUseRangeCommands,
                                           includeBaseConfig, setIncludeBaseConfig,
                                           forcePoeReset, setForcePoeReset,
                                           version
@@ -97,6 +100,15 @@ export default function ConfigPreview({
                                 onChange={(e) => setIncludeDescriptions(e.target.checked)}
                             />
                             <span>Description</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer hover:text-slate-200">
+                            <input
+                                type="checkbox"
+                                className="rounded bg-slate-700 border-slate-600 text-green-500 focus:ring-green-500/50"
+                                checked={useRangeCommands}
+                                onChange={(e) => setUseRangeCommands(e.target.checked)}
+                            />
+                            <span>Range</span>
                         </label>
                     </div>
 
