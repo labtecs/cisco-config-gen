@@ -23,15 +23,17 @@ app.post('/api/connect', (req, res) => {
 
         conn.shell((err, stream) => {
             if (err) {
-                console.error('[SSH] Shell error:', err);
-                if (!errorSent) { errorSent = true; return res.status(500).json({ error: err.message }); }
+                // Use toString() for the most robust error handling
+                const shellErrorMessage = err ? err.toString() : 'An unknown shell error occurred.';
+                console.error('[SSH] Shell error:', shellErrorMessage);
+                if (!errorSent) {
+                    errorSent = true;
+                    return res.status(500).json({ error: shellErrorMessage });
+                }
                 return;
             }
 
             // Commands to fetch config without pagination
-            // 1. term len 0 (Disable pagination like --More--)
-            // 2. show running-config
-            // 3. exit
             stream.end('terminal length 0\nshow running-config\nexit\n');
 
             stream.on('data', (data) => {
@@ -42,18 +44,18 @@ app.post('/api/connect', (req, res) => {
                 console.log('[SSH] Stream closed.');
                 conn.end();
 
-                // Optional: Basic Cleanup (remove command echo if needed, but parser usually handles it)
-                // Sending back the raw output
                 if (!errorSent) {
                     res.json({ success: true, config: configData });
                 }
             });
         });
     }).on('error', (err) => {
-        console.error('[SSH] Connection error:', err.message);
+        // Use toString() for the most robust error handling
+        const connErrorMessage = err ? err.toString() : 'An unknown connection error occurred.';
+        console.error('[SSH] Connection error:', connErrorMessage);
         if (!errorSent) {
             errorSent = true;
-            res.status(500).json({ error: 'Connection failed: ' + err.message });
+            res.status(500).json({ error: 'Connection failed: ' + connErrorMessage });
         }
     }).connect({
         host: ip,

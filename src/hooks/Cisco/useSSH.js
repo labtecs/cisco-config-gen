@@ -4,7 +4,7 @@ export function useSSH(onSuccess) {
     const [isConnecting, setIsConnecting] = useState(false);
     const [error, setError] = useState(null);
 
-    const handleSSHConnect = async (credentials) => {
+    const handleSSHConnect = async (_credentials) => {
         setIsConnecting(true);
         setError(null);
         try {
