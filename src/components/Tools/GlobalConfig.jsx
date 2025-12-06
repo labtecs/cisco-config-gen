@@ -2,6 +2,18 @@ import React from 'react';
 import { useGlobalConfig } from '../../hooks/Cisco/useGlobalConfig';
 import { Copy, Download, Plus, Trash2, Settings, Network, Shield, GitFork, Clock } from 'lucide-react';
 
+const Section = ({ icon, title, children }) => (
+    <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+        <h3 className="font-semibold mb-3 text-slate-600 flex items-center gap-2">{icon}{title}</h3>
+        <div className="space-y-4">
+            {children}
+        </div>
+    </div>
+);
+
+const Input = (props) => <input {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
+const Select = (props) => <select {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
+
 export default function GlobalConfig({ fileContent }) {
     const {
         hostname, setHostname,
@@ -19,18 +31,6 @@ export default function GlobalConfig({ fileContent }) {
         copyToClipboard,
         downloadFile,
     } = useGlobalConfig({ fileContent });
-
-    const Section = ({ icon, title, children }) => (
-        <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-            <h3 className="font-semibold mb-3 text-slate-600 flex items-center gap-2">{icon}{title}</h3>
-            <div className="space-y-4">
-                {children}
-            </div>
-        </div>
-    );
-
-    const Input = (props) => <input {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
-    const Select = (props) => <select {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
 
     return (
         <main className="max-w-7xl mx-auto p-4 md:p-6">

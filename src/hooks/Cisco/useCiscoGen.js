@@ -11,11 +11,9 @@ import { parseVlanString } from '../../utils/ciscoHelpers';
  * It composes smaller, specialized hooks for managing state and logic.
  * @param {object} props - Props for the hook.
  * @param {string} props.fileContent - The content of an uploaded running-config.
- * @param {function} props.setShowConnectionBar - Function to control the SSH connection bar visibility.
- * @param {function} props.onSshSuccess - Callback executed after a successful SSH connection.
  * @returns {object} All state and handlers needed by the UI components.
  */
-export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess }) {
+export function useCiscoGen({ fileContent }) {
     // --- STATE DEFINITIONS ---
     const [switchModel, setSwitchModel] = useState(48);
     const [uplinkCount, setUplinkCount] = useState(4);
@@ -260,45 +258,6 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         if (idx < ports.length - 1) { setSingleEditPortId(ports[idx + 1].id); scrollToPreviewPort(ports[idx + 1].id); }
     };
 
-    const [isConnecting, setIsConnecting] = useState(false);
-
-    const handleSSHConnect = async (credentials) => {
-        setIsConnecting(true);
-        console.log("Versuche Verbindung zu:", credentials.ip);
-
-        try {
-            const protocol = window.location.protocol;
-            const hostname = window.location.hostname;
-            const backendUrl = `${protocol}//${hostname}:3001/api/connect`;
-
-            const response = await fetch(backendUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(credentials)
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                const errorMessage = data.error || 'Verbindung fehlgeschlagen';
-                console.error("SSH Error:", new Error(errorMessage));
-                alert(`Fehler: ${errorMessage}\n\nStelle sicher, dass 'node server.js' läuft!`);
-                return;
-            }
-
-            if (data.success && data.config) {
-                showToast(`Verbindung erfolgreich! Config geladen.`);
-                onSshSuccess(data.config);
-                setShowConnectionBar(false);
-            }
-        } catch (error) {
-            console.error("Unerwarteter SSH Error:", error);
-            alert(`Fehler: ${error.message}\n\nStelle sicher, dass 'node server.js' läuft!`);
-        } finally {
-            setIsConnecting(false);
-        }
-    };
-
     return {
         // State
         switchModel, setSwitchModel,
@@ -329,7 +288,6 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         selectedPortIds, ...setBulkState, ...bulkState,
         showSecurityOptions, setShowSecurityOptions,
         availableVlans, generatedConfig, singlePort,
-        isConnecting, handleSSHConnect,
         switchToSingleEditor,
         resetState,
 

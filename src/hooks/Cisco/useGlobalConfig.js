@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 
 /**
  * Manages the state and logic for the Global Config tool.
  */
-export function useGlobalConfig() {
+export function useGlobalConfig({ fileContent }) {
     // --- STATE DEFINITIONS ---
     const [hostname, setHostname] = useState('Switch');
     const [enableSecret, setEnableSecret] = useState('');
@@ -16,6 +16,60 @@ export function useGlobalConfig() {
     const [spanningTreeMode, setSpanningTreeMode] = useState('rapid-pvst');
     const [passwordEncryption, setPasswordEncryption] = useState(true);
     const [ntpServers, setNtpServers] = useState('');
+
+    useEffect(() => {
+        if (fileContent) {
+            const lines = fileContent.split('\n');
+            const newVlans = [];
+            let currentVlan = null;
+            const ntp = [];
+
+            lines.forEach(line => {
+                const hostnameMatch = line.match(/^hostname\s(.+)/);
+                if (hostnameMatch) setHostname(hostnameMatch[1]);
+
+                const secretMatch = line.match(/^enable secret\s(.+)/);
+                if (secretMatch) setEnableSecret(secretMatch[1]);
+
+                const vlanMatch = line.match(/^vlan\s(\d+)/);
+                if (vlanMatch) {
+                    currentVlan = vlanMatch[1];
+                    newVlans.push({ id: currentVlan, name: '' });
+                }
+
+                const nameMatch = line.match(/^\sname\s(.+)/);
+                if (nameMatch && currentVlan) {
+                    const vlan = newVlans.find(v => v.id === currentVlan);
+                    if (vlan) vlan.name = nameMatch[1];
+                    currentVlan = null;
+                }
+
+                const mgmtVlanMatch = line.match(/^interface Vlan(\d+)/);
+                if (mgmtVlanMatch) setMgmtVlan(mgmtVlanMatch[1]);
+
+                const mgmtIpMatch = line.match(/^\sip address\s([\d.]+)\s([\d.]+)/);
+                if (mgmtIpMatch) {
+                    setMgmtIp(mgmtIpMatch[1]);
+                    setMgmtMask(mgmtIpMatch[2]);
+                }
+
+                const mgmtDescMatch = line.match(/^\sdescription\s(.+)/);
+                if (mgmtDescMatch) setMgmtDescription(mgmtDescMatch[1]);
+
+                const gatewayMatch = line.match(/^ip default-gateway\s(.+)/);
+                if (gatewayMatch) setDefaultGateway(gatewayMatch[1]);
+
+                const spanningTreeMatch = line.match(/^spanning-tree mode\s(.+)/);
+                if (spanningTreeMatch) setSpanningTreeMode(spanningTreeMatch[1]);
+
+                const ntpMatch = line.match(/^ntp server\s(.+)/);
+                if (ntpMatch) ntp.push(ntpMatch[1]);
+            });
+
+            if (newVlans.length > 0) setVlans(newVlans);
+            if (ntp.length > 0) setNtpServers(ntp.join(', '));
+        }
+    }, [fileContent]);
 
     // --- VLAN HANDLERS ---
     const addVlan = () => {

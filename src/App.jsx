@@ -1,4 +1,4 @@
-import React, { useState} from 'react';
+import React, { useState } from 'react';
 import { Network, ShieldCheck, Box, Settings } from 'lucide-react';
 
 // Tools importieren
@@ -6,6 +6,8 @@ import ConfigGen from './components/Tools/ConfigGen';
 import AclInspector from './components/Tools/AclInspector';
 import GlobalConfig from './components/Tools/GlobalConfig';
 import GlobalHeader from "./components/Layout/GlobalHeader.jsx";
+import ConnectionBar from './components/Layout/ConnectionBar';
+import { useSSH } from './hooks/Cisco/useSSH.js';
 
 /**
  * The main application component.
@@ -20,6 +22,12 @@ export default function App() {
     const [dragActive, setDragActive] = useState(false);
     const [showConnectionBar, setShowConnectionBar] = useState(false);
 
+    const handleSshContent = (configText) => {
+        setFileContent(configText);
+        setShowConnectionBar(false); // Close bar on success
+    };
+
+    const { isConnecting, handleSSHConnect } = useSSH(handleSshContent);
 
     const handleFile = (file) => {
         if (!file) return;
@@ -30,10 +38,6 @@ export default function App() {
             }
         };
         reader.readAsText(file);
-    };
-
-    const handleSshContent = (configText) => {
-        setFileContent(configText);
     };
 
     const handleGlobalUpload = (event) => {
@@ -82,7 +86,6 @@ export default function App() {
              onDragOver={handleDragOver}
              onDrop={handleDrop}
         >
-
             {/* Global navigation bar, sticky at the top */}
             <nav className="bg-slate-900 text-white border-b border-slate-700 sticky top-0 z-[100]">
                 <div className="max-w-7xl mx-auto px-4">
@@ -138,27 +141,31 @@ export default function App() {
                     </div>
                 </div>
             </nav>
+
             <GlobalHeader
                 onUpload={handleGlobalUpload}
                 dragActive={dragActive}
-                showSshButton={activeTool === 'generator'}
+                showSshButton={true} // Always show SSH button
                 onToggleConnect={() => setShowConnectionBar(!showConnectionBar)}
                 isConnectOpen={showConnectionBar}
                 onReset={handleGlobalReset}
             />
 
+            {/* CONNECTION BAR - SLIDES IN */}
+            {showConnectionBar && (
+                <ConnectionBar
+                    onConnect={handleSSHConnect}
+                    onClose={() => setShowConnectionBar(false)}
+                    isLoading={isConnecting}
+                />
+            )}
 
             {/* Main content area where the active tool is rendered */}
             <div className="flex-1">
                 {/* Conditionally render the component based on the activeTool state */}
                 {activeTool === 'generator' && (
                     <div className="animate-in fade-in duration-300">
-                        <ConfigGen
-                            fileContent={fileContent}
-                            showConnectionBar={showConnectionBar}
-                            setShowConnectionBar={setShowConnectionBar}
-                            onSshSuccess={handleSshContent}
-                        />
+                        <ConfigGen fileContent={fileContent} />
                     </div>
                 )}
                 {activeTool === 'global' && (

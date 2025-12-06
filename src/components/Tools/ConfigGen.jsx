@@ -4,29 +4,19 @@ import MaintenanceModal from './MaintenanceModal';
 // Components & Hooks
 // WICHTIG: Hier nur EIN Import mit dem korrekten Pfad (zwei Ebenen hoch)
 import { useCiscoGen } from '../../hooks/Cisco/useCiscoGen.js';
-import ConnectionBar from '../Layout/ConnectionBar';
 import SwitchVisualizer from '../Visualizer/SwitchVisualizer';
 import GlobalSettings from '../Controls/GlobalSettings';
 import ConfigPreview from '../Editor/ConfigPreview';
 import SinglePortEditor from '../Editor/SinglePortEditor';
 import MultiPortEditor from '../Editor/MultiPortEditor';
 
-export default function ConfigGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess }) {
+export default function ConfigGen({ fileContent }) {
     const APP_VERSION = "v4.0";
-    const logic = useCiscoGen({ fileContent, showConnectionBar, setShowConnectionBar, onSshSuccess });
+    const logic = useCiscoGen({ fileContent });
     const [showMaintenance, setShowMaintenance] = React.useState(false);
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
-            {/* CONNECTION BAR - SLIDES IN */}
-            {showConnectionBar && (
-                <ConnectionBar
-                    onConnect={logic.handleSSHConnect}
-                    onClose={() => setShowConnectionBar(false)}
-                    isLoading={logic.isConnecting}
-                />
-            )}
-
             <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-8">
                      {/* CONTROLS */}
                     <GlobalSettings
