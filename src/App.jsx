@@ -1,9 +1,10 @@
 import React, { useState} from 'react';
-import { Network, ShieldCheck, Box } from 'lucide-react';
+import { Network, ShieldCheck, Box, Settings } from 'lucide-react';
 
 // Tools importieren
 import ConfigGen from './components/Tools/ConfigGen';
 import AclInspector from './components/Tools/AclInspector';
+import GlobalConfig from './components/Tools/GlobalConfig';
 import GlobalHeader from "./components/Layout/GlobalHeader.jsx";
 
 /**
@@ -13,7 +14,7 @@ import GlobalHeader from "./components/Layout/GlobalHeader.jsx";
  * @returns {JSX.Element} The rendered App component.
  */
 export default function App() {
-    // State to track the currently active tool ('generator' or 'acl')
+    // State to track the currently active tool ('generator', 'acl', or 'global')
     const [activeTool, setActiveTool] = useState('generator');
     const [fileContent, setFileContent] = useState('');
     const [dragActive, setDragActive] = useState(false);
@@ -108,6 +109,19 @@ export default function App() {
                                 Switchport Gen
                             </button>
 
+                            {/* Button to activate the Global Config tool */}
+                            <button
+                                onClick={() => setActiveTool('global')}
+                                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition-all border-b-2 ${
+                                    activeTool === 'global'
+                                        ? 'bg-slate-800 text-white border-purple-500'
+                                        : 'text-slate-400 hover:text-white hover:bg-slate-800 border-transparent'
+                                }`}
+                            >
+                                <Settings size={16} />
+                                Global Config
+                            </button>
+
                             {/* Button to activate the ACL Inspector tool */}
                             <button
                                 onClick={() => setActiveTool('acl')}
@@ -137,7 +151,7 @@ export default function App() {
             {/* Main content area where the active tool is rendered */}
             <div className="flex-1">
                 {/* Conditionally render the component based on the activeTool state */}
-                {activeTool === 'generator' ? (
+                {activeTool === 'generator' && (
                     <div className="animate-in fade-in duration-300">
                         <ConfigGen
                             fileContent={fileContent}
@@ -146,7 +160,13 @@ export default function App() {
                             onSshSuccess={handleSshContent}
                         />
                     </div>
-                ) : (
+                )}
+                {activeTool === 'global' && (
+                    <div className="animate-in fade-in duration-300">
+                        <GlobalConfig fileContent={fileContent} />
+                    </div>
+                )}
+                {activeTool === 'acl' && (
                     <div className="animate-in fade-in duration-300">
                         <AclInspector fileContent={fileContent} />
                     </div>
