@@ -7,12 +7,13 @@ export default function GlobalSettings({
                                            uplinkCount, setUplinkCount,
                                            stackSize, setStackSize,
                                            portNaming, setPortNaming,
+                                           portLayout, setPortLayout,
                                            baseInterfaceType, setBaseInterfaceType,
                                            uplinkInterfaceType, setUplinkInterfaceType,
                                            globalVoiceVlan, setGlobalVoiceVlan
                                        }) {
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 grid grid-cols-1 md:grid-cols-7 gap-4">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 grid grid-cols-1 md:grid-cols-8 gap-4">
             <div className="space-y-2">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Ports pro Switch</label>
                 <select className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" value={switchModel} onChange={(e) => setSwitchModel(parseInt(e.target.value))}>
@@ -49,6 +50,13 @@ export default function GlobalSettings({
                 <select className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" value={portNaming} onChange={(e) => setPortNaming(e.target.value)}>
                     <option value="simple">Simple (Gi0/X)</option>
                     <option value="stack">Stack (Gi1/0/X)</option>
+                </select>
+            </div>
+            <div className="space-y-2">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Port Layout</label>
+                <select className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" value={portLayout} onChange={(e) => setPortLayout(e.target.value)}>
+                    <option value="two-row">Two-Row</option>
+                    <option value="single-row">Single-Row</option>
                 </select>
             </div>
             <div className="space-y-2">

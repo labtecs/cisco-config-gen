@@ -69,6 +69,7 @@ const Port = ({ portData, portNum, isSelected, isCurrentSingle, onPortClick, isT
  * @param {number} props.stackSize - The number of switches in the stack.
  * @param {number} props.switchModel - The number of main ports on a single switch (e.g., 24 or 48).
  * @param {number} props.uplinkCount - The number of uplink ports on a single switch.
+ * @param {string} props.portLayout - The layout of the ports ('two-row' or 'single-row').
  * @param {Array<object>} props.ports - The array of port data objects.
  * @param {Set<string>} props.selectedPortIds - A Set containing the IDs of currently selected ports.
  * @param {string} props.viewMode - The current view mode ('single' or 'multi').
@@ -82,6 +83,7 @@ export default function SwitchVisualizer({
                                              stackSize,
                                              switchModel,
                                              uplinkCount,
+                                             portLayout,
                                              ports,
                                              selectedPortIds,
                                              viewMode,
@@ -90,6 +92,27 @@ export default function SwitchVisualizer({
                                              hostname,
                                              iosVersion
                                          }) {
+    const renderPorts = (portList, isTopRow) => {
+        return portList.map((portNum) => {
+            const portsPerSwitch = switchModel + uplinkCount;
+            const baseIndex = 0; // Assuming single switch for now
+            const portIndex = baseIndex + (portNum - 1);
+            const portData = ports[portIndex];
+            if (!portData) return null;
+            return (
+                <Port
+                    key={portNum}
+                    portData={portData}
+                    portNum={portNum}
+                    isSelected={selectedPortIds.has(portData.id)}
+                    isCurrentSingle={viewMode === 'single' && singleEditPortId === portData.id}
+                    onPortClick={onPortClick}
+                    isTopRow={isTopRow}
+                />
+            );
+        });
+    };
+
     return (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
@@ -122,53 +145,20 @@ export default function SwitchVisualizer({
                         <div className="bg-slate-800 p-3 rounded-lg border-4 border-slate-700 shadow-inner inline-flex flex-row items-center gap-4 min-w-max">
                             {/* Main Ports Block */}
                             <div className="flex flex-col gap-2">
-                                {/* Top Row: Odd Ports */}
-                                <div className="flex gap-2">
-                                    {Array.from({ length: switchModel / 2 }).map((_, i) => {
-                                        const portNum = (i * 2) + 1;
-                                        // Calculate the base index for the current switch in the stack.
-                                        const portsPerSwitch = switchModel + uplinkCount;
-                                        const baseIndex = stackIndex * portsPerSwitch;
-                                        // Calculate the final index for the specific port in the global `ports` array.
-                                        const portIndex = baseIndex + (portNum - 1);
-                                        const portData = ports[portIndex];
-                                        if (!portData) return null;
-                                        return (
-                                            <Port
-                                                key={portNum}
-                                                portData={portData}
-                                                portNum={portNum}
-                                                isSelected={selectedPortIds.has(portData.id)}
-                                                isCurrentSingle={viewMode === 'single' && singleEditPortId === portData.id}
-                                                onPortClick={onPortClick}
-                                                isTopRow={true}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                                <div className="flex gap-2">
-                                    {Array.from({ length: switchModel / 2 }).map((_, i) => {
-                                        const portNum = (i * 2) + 2;
-                                        // Calculate the base index for the current switch in the stack.
-                                        const portsPerSwitch = switchModel + uplinkCount;
-                                        const baseIndex = stackIndex * portsPerSwitch;
-                                        // Calculate the final index for the specific port in the global `ports` array.
-                                        const portIndex = baseIndex + (portNum - 1);
-                                        const portData = ports[portIndex];
-                                        if (!portData) return null;
-                                        return (
-                                            <Port
-                                                key={portNum}
-                                                portData={portData}
-                                                portNum={portNum}
-                                                isSelected={selectedPortIds.has(portData.id)}
-                                                isCurrentSingle={viewMode === 'single' && singleEditPortId === portData.id}
-                                                onPortClick={onPortClick}
-                                                isTopRow={false}
-                                            />
-                                        );
-                                    })}
-                                </div>
+                                {portLayout === 'two-row' ? (
+                                    <>
+                                        <div className="flex gap-2">
+                                            {renderPorts(Array.from({ length: switchModel / 2 }, (_, i) => (i * 2) + 1), true)}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            {renderPorts(Array.from({ length: switchModel / 2 }, (_, i) => (i * 2) + 2), false)}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex gap-2">
+                                        {renderPorts(Array.from({ length: switchModel }, (_, i) => i + 1), true)}
+                                    </div>
+                                )}
                             </div>
 
                             {uplinkCount > 0 && <div className="w-px h-16 bg-slate-600 mx-1"></div>}
@@ -178,10 +168,8 @@ export default function SwitchVisualizer({
                                 <div className="flex gap-2 bg-slate-900 p-2 rounded border border-slate-700">
                                     {Array.from({ length: uplinkCount }).map((_, i) => {
                                         const portNum = switchModel + i + 1;
-                                        // Calculate the base index for the current switch in the stack.
                                         const portsPerSwitch = switchModel + uplinkCount;
                                         const baseIndex = stackIndex * portsPerSwitch;
-                                        // Calculate the final index for the specific port in the global `ports` array.
                                         const portIndex = baseIndex + (portNum - 1);
                                         const portData = ports[portIndex];
                                         if (!portData) return null;
@@ -192,8 +180,6 @@ export default function SwitchVisualizer({
                                         const isIncluded = portData.includeInConfig;
                                         const isCurrentSingle = viewMode === 'single' && singleEditPortId === portData.id;
 
-                                        // Uplink ports have a different visual style and are not using the `Port` component
-                                        // because their layout and details are significantly different.
                                         return (
                                             <div key={portNum} className="group relative flex flex-col items-center justify-center" onClick={(e) => onPortClick(portData.id, e)}>
                                                 <div className={`w-6 h-6 rounded-md border-2 ${!isIncluded ? 'opacity-30' : ''} ${isCurrentSingle ? 'ring-2 ring-white ring-offset-2 ring-offset-blue-600 z-10' : ''} ${isSelected ? 'ring-2 ring-yellow-400 ring-offset-1 ring-offset-slate-800' : ''} ${isTrunk ? 'bg-orange-900 border-orange-500' : isActive ? 'bg-green-900 border-green-500' : 'bg-slate-800 border-slate-500'} shadow-inner cursor-pointer flex items-center justify-center`}>

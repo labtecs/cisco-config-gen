@@ -21,6 +21,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     const [uplinkCount, setUplinkCount] = useState(4);
     const [stackSize, setStackSize] = useState(1);
     const [portNaming, setPortNaming] = useState('stack');
+    const [portLayout, setPortLayout] = useState('two-row');
     const [baseInterfaceType, setBaseInterfaceType] = useState('GigabitEthernet');
     const [uplinkInterfaceType, setUplinkInterfaceType] = useState('TenGigabitEthernet');
     const [globalVoiceVlan, setGlobalVoiceVlan] = useState('');
@@ -304,6 +305,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         uplinkCount, setUplinkCount,
         stackSize, setStackSize,
         portNaming, setPortNaming,
+        portLayout, setPortLayout,
         baseInterfaceType, setBaseInterfaceType,
         uplinkInterfaceType, setUplinkInterfaceType,
         globalVoiceVlan, setGlobalVoiceVlan,

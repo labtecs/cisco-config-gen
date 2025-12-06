@@ -34,6 +34,7 @@ export default function ConfigGen({ fileContent, showConnectionBar, setShowConne
                         uplinkCount={logic.uplinkCount} setUplinkCount={logic.setUplinkCount}
                         stackSize={logic.stackSize} setStackSize={logic.setStackSize}
                         portNaming={logic.portNaming} setPortNaming={logic.setPortNaming}
+                        portLayout={logic.portLayout} setPortLayout={logic.setPortLayout}
                         baseInterfaceType={logic.baseInterfaceType} setBaseInterfaceType={logic.setBaseInterfaceType}
                         uplinkInterfaceType={logic.uplinkInterfaceType} setUplinkInterfaceType={logic.setUplinkInterfaceType}
                         globalVoiceVlan={logic.globalVoiceVlan} setGlobalVoiceVlan={logic.setGlobalVoiceVlan}
@@ -44,6 +45,7 @@ export default function ConfigGen({ fileContent, showConnectionBar, setShowConne
                     stackSize={logic.stackSize}
                     switchModel={logic.switchModel}
                     uplinkCount={logic.uplinkCount}
+                    portLayout={logic.portLayout}
                     ports={logic.ports}
                     selectedPortIds={logic.selectedPortIds}
                     viewMode={logic.viewMode}
