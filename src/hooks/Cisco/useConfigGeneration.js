@@ -31,6 +31,7 @@ const naturalSort = (a, b) => {
  */
 export function useConfigGeneration({
     ports,
+    portChannels, // Added for Port-Channel
     includeBaseConfig,
     includeDescriptions,
     forcePoeReset,
@@ -41,7 +42,6 @@ export function useConfigGeneration({
 }) {
     const getPortConfigString = useCallback((port) => {
         let lines = [];
-        // Reset Logic
         if (port.resetOnly) {
             lines.push(`default interface ${port.name}`);
             return lines.join('\n');
@@ -52,10 +52,22 @@ export function useConfigGeneration({
 
         lines.push(`interface ${port.name}`);
 
-        // 1. BASIS-KONFIGURATION (Nur wenn Checkbox an ist)
-        if (includeBaseConfig) {
-            if (includeDescriptions && port.description) lines.push(` description ${port.description}`);
+        if (includeDescriptions && port.description) {
+            lines.push(` description ${port.description}`);
+        }
 
+        // --- Port-Channel Member Logic ---
+        if (port.channelGroupId) {
+            lines.push(` channel-group ${port.channelGroupId} mode active`);
+            if (includeNoShutdown) {
+                if (port.noShutdown) lines.push(` no shutdown`); else lines.push(` shutdown`);
+            }
+            lines.push(` exit`);
+            return lines.join('\n');
+        }
+        
+        // --- Regular Port Logic ---
+        if (includeBaseConfig) {
             if (port.mode === 'access') {
                 lines.push(` switchport mode access`);
                 if (port.accessVlan) lines.push(` switchport access vlan ${port.accessVlan}`);
@@ -67,19 +79,14 @@ export function useConfigGeneration({
             }
         }
 
-        // 2. POE KONFIGURATION (Separat behandelt)
         if (port.poeMode === 'never') {
             lines.push(` power inline never`);
         } else if (port.poeMode === 'static') {
             lines.push(` power inline static`);
-        } else if (port.poeMode === 'auto') {
-            // SPEZIAL-LOGIK: Wenn "Force Reset" an ist
-            if (forcePoeReset) {
-                lines.push(` no power inline never`);
-            }
+        } else if (port.poeMode === 'auto' && forcePoeReset) {
+            lines.push(` no power inline never`);
         }
 
-        // 3. SECURITY (Nur mit Base Config sinnvoll)
         if (includeBaseConfig && port.mode === 'access' && port.portSecurity) {
             lines.push(` switchport port-security`);
             if (port.secMax > 1) lines.push(` switchport port-security maximum ${port.secMax}`);
@@ -91,12 +98,10 @@ export function useConfigGeneration({
             }
         }
 
-        // 4. PORTFAST (Nur mit Base Config)
         if (includeBaseConfig && port.portfast) {
             lines.push(useModernPortfast ? ` spanning-tree portfast edge` : ` spanning-tree portfast`);
         }
 
-        // 5. SHUTDOWN STATE (Immer wichtig)
         if (includeNoShutdown) {
             if (port.noShutdown) lines.push(` no shutdown`); else lines.push(` shutdown`);
         } else {
@@ -107,12 +112,6 @@ export function useConfigGeneration({
         return lines.join('\n');
     }, [includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown]);
 
-    /**
-     * Compresses a list of interface names into a Cisco-compatible 'interface range' string.
-     * Example: ['GigabitEthernet1/0/1', 'GigabitEthernet1/0/2'] becomes 'interface range GigabitEthernet1/0/1 - 2'
-     * @param {string[]} interfaces - An array of full interface names.
-     * @returns {{ranges: string[], singles: string[]}} An object containing range commands and single interface names.
-     */
     const createInterfaceRangeString = (interfaces) => {
         if (!interfaces || interfaces.length === 0) return { ranges: [], singles: [] };
 
@@ -157,10 +156,37 @@ export function useConfigGeneration({
     };
 
     const generatedConfig = useMemo(() => {
-        const includedPorts = ports.filter(p => p.includeInConfig);
-        if (includedPorts.length === 0) return "! No ports selected for configuration.\nend\n";
-
         let output = "! Generated Switchport Config\n";
+
+        // 1. Generate Port-Channel Interface Configs
+        if (portChannels && portChannels.length > 0) {
+            portChannels.forEach(pc => {
+                output += `!\ninterface ${pc.name}\n`;
+                if (includeDescriptions && pc.description) {
+                    output += ` description ${pc.description}\n`;
+                }
+                if (pc.mode === 'access') {
+                    output += ` switchport mode access\n`;
+                    if (pc.accessVlan) output += ` switchport access vlan ${pc.accessVlan}\n`;
+                } else { // Default to trunk
+                    output += ` switchport mode trunk\n`;
+                    if (pc.trunkVlans && pc.trunkVlans.toLowerCase() !== 'all') {
+                        output += ` switchport trunk allowed vlan ${pc.trunkVlans}\n`;
+                    }
+                    if (pc.nativeVlan && pc.nativeVlan != 1) {
+                        output += ` switchport trunk native vlan ${pc.nativeVlan}\n`;
+                    }
+                }
+                output += ` exit\n`;
+            });
+            output += '!\n';
+        }
+
+        // 2. Generate Physical Interface Configs
+        const includedPorts = ports.filter(p => p.includeInConfig);
+        if (includedPorts.length === 0 && (!portChannels || portChannels.length === 0)) {
+            return "! No configuration to generate.\nend\n";
+        }
 
         if (!useRangeCommands) {
             const singlePortConfigs = includedPorts.map(port => getPortConfigString(port));
@@ -176,6 +202,10 @@ export function useConfigGeneration({
                     id, name, bulkGroupId, isUplink, includeInConfig,
                     ...configProps
                 } = port;
+                // For channel members, the signature is different
+                if (port.channelGroupId) {
+                    return `channel-member-${port.channelGroupId}-${port.description}-${port.noShutdown}`;
+                }
                 return JSON.stringify(Object.entries(configProps).sort());
             };
 
@@ -220,7 +250,7 @@ export function useConfigGeneration({
         output = output.trim() + "\n\nend\n";
         if (includeWrMem) { output += "wr mem\n"; }
         return output;
-    }, [ports, includeWrMem, getPortConfigString, useRangeCommands]);
+    }, [ports, portChannels, includeWrMem, getPortConfigString, useRangeCommands, includeDescriptions]);
 
     return { generatedConfig };
 }

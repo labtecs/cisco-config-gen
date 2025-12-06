@@ -11,11 +11,9 @@ import { parseVlanString } from '../../utils/ciscoHelpers';
  * It composes smaller, specialized hooks for managing state and logic.
  * @param {object} props - Props for the hook.
  * @param {string} props.fileContent - The content of an uploaded running-config.
- * @param {function} props.setShowConnectionBar - Function to control the SSH connection bar visibility.
- * @param {function} props.onSshSuccess - Callback executed after a successful SSH connection.
  * @returns {object} All state and handlers needed by the UI components.
  */
-export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess }) {
+export function useCiscoGen({ fileContent }) {
     // --- STATE DEFINITIONS ---
     const [switchModel, setSwitchModel] = useState(48);
     const [uplinkCount, setUplinkCount] = useState(4);
@@ -43,6 +41,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     const [showStateColumn, setShowStateColumn] = useState(false);
     const [showVoiceColumn, setShowVoiceColumn] = useState(true);
     const [showFastColumn, setShowFastColumn] = useState(true);
+    const [showChannelGroupColumn, setShowChannelGroupColumn] = useState(false);
 
     // View Mode
     const [viewMode, setViewMode] = useState('multi');
@@ -53,6 +52,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     const [vlanNames, setVlanNames] = useState({});
     const [toast, setToast] = useState({ show: false, message: '' });
     const [confirmClearDesc, setConfirmClearDesc] = useState(false);
+    const [portChannels, setPortChannels] = useState([]);
 
     // UI Toggles
     const [showSecurityOptions, setShowSecurityOptions] = useState(false);
@@ -61,8 +61,39 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     const { ports, setPorts, generatePortList, updatePort } = usePortState({ switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType });
     const { selectedPortIds, toggleSelection, toggleSelectAll, selectPortsByVlan, clearSelection } = useSelection(ports);
     const { bulkState, setBulkState, applyBulkEdit } = useBulkEdit({ setPorts, selectedPortIds, globalVoiceVlan });
-    const { generatedConfig } = useConfigGeneration({ ports, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands });
+    const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands });
     const { parseRunningConfig } = useConfigParsing();
+
+    // --- PORT-CHANNEL LOGIC (IF MANUALLY CREATED) ---
+    useEffect(() => {
+        // This effect now primarily handles manual additions/removals in the UI.
+        // Parsing from a file is handled in the fileContent effect.
+        const activeGroupIds = [...new Set(ports.map(p => p.channelGroupId).filter(id => id))];
+        
+        setPortChannels(currentChannels => {
+            const filteredChannels = currentChannels.filter(pc => activeGroupIds.includes(pc.id));
+            const existingIds = new Set(filteredChannels.map(pc => pc.id));
+
+            activeGroupIds.forEach(id => {
+                if (!existingIds.has(id)) {
+                    filteredChannels.push({
+                        id: id,
+                        name: `Port-channel${id}`,
+                        description: '',
+                        mode: 'trunk',
+                        trunkVlans: 'all',
+                        nativeVlan: 1,
+                    });
+                }
+            });
+
+            return filteredChannels.sort((a, b) => parseInt(a.id) - parseInt(b.id));
+        });
+    }, [ports]);
+
+    const updatePortChannel = (id, field, value) => {
+        setPortChannels(current => current.map(pc => pc.id === id ? { ...pc, [field]: value } : pc));
+    };
 
     // --- HELPERS ---
     const showToast = (msg) => {
@@ -77,10 +108,11 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         setVlanNames({});
         setGlobalVoiceVlan('');
         setPorts([]);
+        setPortChannels([]); // Also reset port-channels
         setTimeout(() => generatePortList(), 0);
     }, [generatePortList, setPorts]);
 
-    // --- EFFECTS ---
+    // --- MAIN EFFECT FOR FILE PARSING ---
     useEffect(() => {
         if (fileContent) {
             const parsedData = parseRunningConfig(fileContent);
@@ -97,6 +129,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
             setBaseInterfaceType(parsedData.baseInterfaceType);
             setUplinkInterfaceType(parsedData.uplinkInterfaceType);
             setPorts(parsedData.ports);
+            setPortChannels(parsedData.portChannels || []); // Set parsed port-channels
         } else {
             resetState();
         }
@@ -105,7 +138,8 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
     useEffect(() => { generatePortList(); }, [generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
-    // --- MEMOS ---
+    // ... rest of the hook remains the same ...
+
     const availableVlans = useMemo(() => {
         const activeOnPorts = new Set();
         const allVlans = new Set(detectedVlans);
@@ -260,45 +294,6 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         if (idx < ports.length - 1) { setSingleEditPortId(ports[idx + 1].id); scrollToPreviewPort(ports[idx + 1].id); }
     };
 
-    const [isConnecting, setIsConnecting] = useState(false);
-
-    const handleSSHConnect = async (credentials) => {
-        setIsConnecting(true);
-        console.log("Versuche Verbindung zu:", credentials.ip);
-
-        try {
-            const protocol = window.location.protocol;
-            const hostname = window.location.hostname;
-            const backendUrl = `${protocol}//${hostname}:3001/api/connect`;
-
-            const response = await fetch(backendUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(credentials)
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                const errorMessage = data.error || 'Verbindung fehlgeschlagen';
-                console.error("SSH Error:", new Error(errorMessage));
-                alert(`Fehler: ${errorMessage}\n\nStelle sicher, dass 'node server.js' läuft!`);
-                return;
-            }
-
-            if (data.success && data.config) {
-                showToast(`Verbindung erfolgreich! Config geladen.`);
-                onSshSuccess(data.config);
-                setShowConnectionBar(false);
-            }
-        } catch (error) {
-            console.error("Unerwarteter SSH Error:", error);
-            alert(`Fehler: ${error.message}\n\nStelle sicher, dass 'node server.js' läuft!`);
-        } finally {
-            setIsConnecting(false);
-        }
-    };
-
     return {
         // State
         switchModel, setSwitchModel,
@@ -325,11 +320,12 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         showStateColumn, setShowStateColumn,
         showVoiceColumn, setShowVoiceColumn,
         showFastColumn, setShowFastColumn,
+        showChannelGroupColumn, setShowChannelGroupColumn,
         toast, confirmClearDesc,
         selectedPortIds, ...setBulkState, ...bulkState,
         showSecurityOptions, setShowSecurityOptions,
         availableVlans, generatedConfig, singlePort,
-        isConnecting, handleSSHConnect,
+        portChannels,
         switchToSingleEditor,
         resetState,
 
@@ -338,6 +334,7 @@ export function useCiscoGen({ fileContent, setShowConnectionBar, onSshSuccess })
         handleClearDescriptions, resetPortToDefault, toggleNoShut, toggleVoiceVlan, clearSelection,
         scrollToPreviewPort, handleVisualizerClick, toggleSelection, toggleSelectAll,
         selectPortsByVlan, applyBulkEdit, copyToClipboard, downloadFile,
-        handlePrevPort, handleNextPort
+        handlePrevPort, handleNextPort,
+        updatePortChannel,
     };
 }

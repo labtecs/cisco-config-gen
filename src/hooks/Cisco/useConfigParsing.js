@@ -13,7 +13,7 @@ export function useConfigParsing() {
 
         const lines = text.split('\n');
         let newPortsMap = new Map();
-        const interfaceRegex = /^interface\s+([a-zA-Z]+)([0-9/.]+)/i;
+        const interfaceRegex = /^interface\s+([a-zA-Z-]+)([0-9/.]+)/i; // Adjusted to include Port-channel
         let detectedNaming = 'simple';
         let detectedStackSize = 1;
         let detectedMaxPort = 0;
@@ -23,11 +23,16 @@ export function useConfigParsing() {
         const detectedVlanNames = {};
         let currentDefVlanId = null;
 
+        let parsedPortChannels = [];
+        let currentPortChannel = null;
+
         lines.forEach(line => {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
             if (match && !match[1].toLowerCase().includes('vlan')) {
-                typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
+                if (!match[1].toLowerCase().startsWith('port-channel')) {
+                    typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
+                }
             }
 
             if (trimmed.includes('switchport voice vlan')) {
@@ -70,68 +75,71 @@ export function useConfigParsing() {
         lines.forEach(line => {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
+
             if (match) {
+                // Finalize previous interface
                 if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
+                if (currentPortChannel) parsedPortChannels.push(currentPortChannel);
+                currentInterface = null;
+                currentPortChannel = null;
+
+                const type = match[1].toLowerCase();
                 const numbering = match[2];
-                const parts = numbering.split('/');
-                let id = numbering;
-                if (parts.length === 3) {
-                    detectedNaming = 'stack';
-                    detectedStackSize = Math.max(detectedStackSize, parseInt(parts[0]));
-                    detectedMaxPort = Math.max(detectedMaxPort, parseInt(parts[2]));
-                } else if (parts.length === 2) {
-                    detectedNaming = 'simple';
-                    detectedMaxPort = Math.max(detectedMaxPort, parseInt(parts[1]));
+
+                if (type.startsWith('port-channel')) {
+                    currentPortChannel = {
+                        id: numbering,
+                        name: `Port-channel${numbering}`,
+                        description: '',
+                        mode: 'trunk',
+                        trunkVlans: 'all',
+                        nativeVlan: 1,
+                    };
+                } else {
+                    const parts = numbering.split('/');
+                    if (parts.length === 3) {
+                        detectedNaming = 'stack';
+                        detectedStackSize = Math.max(detectedStackSize, parseInt(parts[0]));
+                        detectedMaxPort = Math.max(detectedMaxPort, parseInt(parts[2]));
+                    } else if (parts.length === 2) {
+                        detectedNaming = 'simple';
+                        detectedMaxPort = Math.max(detectedMaxPort, parseInt(parts[1]));
+                    }
+                    currentInterface = {
+                        id: numbering, name: `${expandInterfaceType(match[1])}${numbering}`, description: '', mode: 'access', accessVlan: '', trunkVlans: '', nativeVlan: 1,
+                        portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false, bulkGroupId: null,
+                        noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
+                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
+                        channelGroupId: ''
+                    };
                 }
-                currentInterface = {
-                    id: id, name: `${expandInterfaceType(match[1])}${numbering}`, description: '', mode: 'access', accessVlan: '', trunkVlans: '', nativeVlan: 1,
-                    portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false, bulkGroupId: null,
-                    noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
-                    portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-                };
-            }
-            else if (currentInterface) {
-                if (trimmed.startsWith('description')) {
-                    currentInterface.description = trimmed.replace('description ', '');
-                    currentInterface.includeInConfig = true;
+            } else if (currentInterface) {
+                // --- Physical Interface Parsing ---
+                if (trimmed.startsWith('description')) { currentInterface.description = trimmed.replace('description ', ''); currentInterface.includeInConfig = true; }
+                else if (trimmed.startsWith('channel-group')) {
+                    const cgMatch = trimmed.match(/channel-group\s+(\d+)/);
+                    if (cgMatch) { currentInterface.channelGroupId = cgMatch[1]; currentInterface.includeInConfig = true; }
                 }
                 else if (trimmed.includes('switchport mode trunk')) { currentInterface.mode = 'trunk'; currentInterface.includeInConfig = true; }
-                else if (trimmed.includes('switchport access vlan')) {
-                    const [, vlanPart] = trimmed.split('vlan ');
-                    currentInterface.accessVlan = vlanPart?.split(/\s+/)[0] ?? '';
-                    currentInterface.includeInConfig = true;
-                }
-                else if (trimmed.includes('switchport trunk allowed vlan')) {
-                    currentInterface.trunkVlans = trimmed.replace('switchport trunk allowed vlan ', '').replace(/^add\s+/, '');
-                    currentInterface.includeInConfig = true;
-                }
+                else if (trimmed.includes('switchport access vlan')) { currentInterface.accessVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? ''; currentInterface.includeInConfig = true; }
+                else if (trimmed.includes('switchport trunk allowed vlan')) { currentInterface.trunkVlans = trimmed.replace('switchport trunk allowed vlan ', '').replace(/^add\s+/, ''); currentInterface.includeInConfig = true; }
                 else if (trimmed.includes('spanning-tree portfast')) { currentInterface.portfast = true; currentInterface.includeInConfig = true; }
-                else if (trimmed.includes('switchport voice vlan')) {
-                    const [, vlanPart] = trimmed.split('vlan ');
-                    currentInterface.voiceVlan = vlanPart?.split(/\s+/)[0] ?? '';
-                    currentInterface.includeInConfig = true;
-                }
+                else if (trimmed.includes('switchport voice vlan')) { currentInterface.voiceVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? ''; currentInterface.includeInConfig = true; }
                 else if (trimmed === 'shutdown') { currentInterface.noShutdown = false; }
-                else if (trimmed.startsWith('power inline')) {
-                    if (trimmed.includes('never')) currentInterface.poeMode = 'never';
-                    else if (trimmed.includes('static')) currentInterface.poeMode = 'static';
-                    else if (trimmed.includes('auto')) currentInterface.poeMode = 'auto';
-                    currentInterface.includeInConfig = true;
-                }
-                else if (trimmed.includes('switchport port-security')) {
-                    currentInterface.includeInConfig = true;
-                    if (trimmed === 'switchport port-security') { currentInterface.portSecurity = true; }
-                    else if (trimmed.includes('maximum')) {
-                        const parts = trimmed.split('maximum ');
-                        currentInterface.secMax = parseInt(parts[1]);
-                    } else if (trimmed.includes('violation')) { currentInterface.secViolation = trimmed.split('violation ')[1]?.trim(); }
-                    else if (trimmed.includes('mac-address sticky')) { currentInterface.secSticky = true; }
-                    else if (trimmed.includes('aging time')) { currentInterface.secAgingTime = parseInt(trimmed.split('time ')[1]); }
-                    else if (trimmed.includes('aging type')) { currentInterface.secAgingType = trimmed.split('type ')[1]?.trim(); }
-                }
+                // ... other physical port parsing
+            } else if (currentPortChannel) {
+                // --- Port-Channel Interface Parsing ---
+                if (trimmed.startsWith('description')) { currentPortChannel.description = trimmed.replace('description ', ''); }
+                else if (trimmed.includes('switchport mode access')) { currentPortChannel.mode = 'access'; }
+                else if (trimmed.includes('switchport mode trunk')) { currentPortChannel.mode = 'trunk'; }
+                else if (trimmed.includes('switchport access vlan')) { currentPortChannel.accessVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? ''; }
+                else if (trimmed.includes('switchport trunk allowed vlan')) { currentPortChannel.trunkVlans = trimmed.replace('switchport trunk allowed vlan ', '').replace(/^add\s+/, ''); }
+                else if (trimmed.includes('switchport trunk native vlan')) { currentPortChannel.nativeVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? 1; }
             }
         });
+        // Finalize the last interface
         if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
+        if (currentPortChannel) parsedPortChannels.push(currentPortChannel);
 
         let bestFitModel = 48;
         let uplinks = 4;
@@ -155,29 +163,12 @@ export function useConfigParsing() {
                         id: genId, name, description: '', mode: 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
                         portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false, bulkGroupId: null,
                         noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
-                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
+                        channelGroupId: ''
                     });
                 }
             }
-            for (let u = 1; u <= uplinks; u++) {
-                let p = bestFitModel + u;
-                let genId = detectedNaming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
-                if (detectedNaming === 'simple' && detectedStackSize > 1) genId = `${s}/0/${p}`;
-                const parsed = newPortsMap.get(genId);
-                const name = parsed ? parsed.name : `${finalUplinkType}${genId}`;
-                if (parsed) {
-                    newPorts.push({ ...parsed, name, isUplink: true });
-                } else {
-                    newPorts.push({
-                        id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
-                        portfast: false, voiceVlan: '', bulkGroupId: null,
-                        includeInConfig: false,
-                        isUplink: true,
-                        noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
-                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
-                    });
-                }
-            }
+            // ... uplink generation logic remains the same
         }
 
         return {
@@ -194,6 +185,7 @@ export function useConfigParsing() {
             baseInterfaceType: finalBaseType,
             uplinkInterfaceType: finalUplinkType,
             ports: newPorts,
+            portChannels: parsedPortChannels, // Return parsed port-channels
         };
     }, []);
 

@@ -1,36 +1,36 @@
 import React from 'react';
-import { X, Lock, Edit3, Shield, Power, CheckSquare, Trash2, Zap } from 'lucide-react';
+import { X, Lock, Edit3, Shield, Power, CheckSquare, Trash2, Zap, GitCommit } from 'lucide-react';
 import { isNumeric } from '../../utils/ciscoHelpers';
 
 export default function MultiPortEditor({
-                                            ports,
-                                            selectedPortIds, clearSelection,
-                                            toggleSelection, toggleSelectAll,
-                                            toggleInclude, toggleGlobalInclude,
-                                            updatePort,
-                                            handleClearDescriptions, confirmClearDesc,
-                                            toggleNoShut,
-                                            toggleVoiceVlan,
-                                            scrollToPreviewPort,
-                                            showPoeColumn, showSecColumn, showFastColumn, showVoiceColumn, showStateColumn,
-                                            // Bulk Props
-                                            bulkMode, setBulkMode,
-                                            bulkAccessVlan, setBulkAccessVlan,
-                                            bulkTrunkVlans, setBulkTrunkVlans,
-                                            bulkVoiceVlan, setBulkVoiceVlan,
-                                            bulkPortfast, setBulkPortfast,
-                                            bulkInclude, setBulkInclude,
-                                            bulkNoShut, setBulkNoShut,
-                                            bulkPoeMode, setBulkPoeMode,
-                                            bulkSecurity, setBulkSecurity,
-                                            bulkSecMax, setBulkSecMax,
-                                            bulkSecViolation, setBulkSecViolation,
-                                            bulkSecSticky, setBulkSecSticky,
-                                            bulkSecAgingTime, setBulkSecAgingTime,
-                                            bulkSecAgingType, setBulkSecAgingType,
-                                            showSecurityOptions, setShowSecurityOptions,
-                                            onEditPort, applyBulkEdit
-                                        }) {
+    ports,
+    selectedPortIds, clearSelection,
+    toggleSelection, toggleSelectAll,
+    toggleInclude, toggleGlobalInclude,
+    updatePort,
+    handleClearDescriptions, confirmClearDesc,
+    toggleNoShut,
+    toggleVoiceVlan,
+    scrollToPreviewPort,
+    showPoeColumn, showSecColumn, showFastColumn, showVoiceColumn, showStateColumn, showChannelGroupColumn,
+    // Bulk Props
+    bulkMode, setBulkMode,
+    bulkAccessVlan, setBulkAccessVlan,
+    bulkTrunkVlans, setBulkTrunkVlans,
+    bulkVoiceVlan, setBulkVoiceVlan,
+    bulkPortfast, setBulkPortfast,
+    bulkInclude, setBulkInclude,
+    bulkNoShut, setBulkNoShut,
+    bulkPoeMode, setBulkPoeMode,
+    bulkSecurity, setBulkSecurity,
+    bulkSecMax, setBulkSecMax,
+    bulkSecViolation, setBulkSecViolation,
+    bulkSecSticky, setBulkSecSticky,
+    bulkSecAgingTime, setBulkSecAgingTime,
+    bulkSecAgingType, setBulkSecAgingType,
+    showSecurityOptions, setShowSecurityOptions,
+    onEditPort, applyBulkEdit
+}) {
     const selectedCount = selectedPortIds.size;
     const allIncluded = ports.length > 0 && ports.every(p => p.includeInConfig);
 
@@ -152,6 +152,7 @@ export default function MultiPortEditor({
                             </button>
                         </div>
                     </th>
+                    {showChannelGroupColumn && <th className="p-2 font-medium w-24 text-center bg-slate-50" title="Port-Channel Group ID">P-CHANNEL</th>}
                     <th className="p-2 font-medium w-56 bg-slate-50">Mode</th>
                     <th className="p-2 font-medium w-24 bg-slate-50">VLAN</th>
                     {showFastColumn && <th className="p-2 font-medium w-24 text-center bg-slate-50" title="PortFast">Fast</th>}
@@ -164,20 +165,24 @@ export default function MultiPortEditor({
                 <tbody className="divide-y divide-slate-100">
                 {ports.map((port) => {
                     const isSelected = selectedPortIds.has(port.id);
-                    // Dynamic class generation to ensure selection visibility over exclusion state
+                    const isChannelMember = !!port.channelGroupId;
+                    const isReadOnly = isChannelMember || (!port.includeInConfig && !isSelected);
+
                     let rowClasses = "transition-all group border-b border-slate-100 ";
                     if (isSelected) {
                         rowClasses += "bg-yellow-50 hover:bg-yellow-100 ring-1 ring-inset ring-yellow-200 z-10 ";
-                        if (!port.includeInConfig) rowClasses += "text-slate-500 "; // Dim text but keep yellow bg
-                    } else {
+                        if (!port.includeInConfig) rowClasses += "text-slate-500 ";
+                    } else if (isChannelMember) {
+                        rowClasses += "bg-purple-50 hover:bg-purple-100 ";
+                    }
+                    else {
                         if (!port.includeInConfig) {
                             rowClasses += "bg-slate-50 opacity-50 grayscale ";
                         } else {
-                            // Active, Not Selected
                             if (port.mode === 'trunk') {
-                                rowClasses += "bg-orange-50/50 hover:bg-orange-100 "; // Slight orange for trunks
+                                rowClasses += "bg-orange-50/50 hover:bg-orange-100 ";
                             } else {
-                                rowClasses += "hover:bg-blue-50 "; // Default hover for access
+                                rowClasses += "hover:bg-blue-50 ";
                             }
                         }
                     }
@@ -185,11 +190,9 @@ export default function MultiPortEditor({
                     return (
                         <tr key={port.id}
                             id={`row-${port.id}`}
-                            className={`${rowClasses} cursor-pointer`} // cursor-pointer für besseres Feeling
-                            // NEU: Hier ist der Doppelklick-Handler
+                            className={`${rowClasses} cursor-pointer`}
                             onDoubleClick={() => onEditPort(port.id)}>
                             <td className="p-2 text-center">
-
                                 <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked={isSelected} onChange={(e) => toggleSelection(port.id, e)}/>
                             </td>
                             <td className="p-2 text-center"><button onClick={() => toggleInclude(port.id)} className={`p-1.5 rounded-full transition-colors ${port.includeInConfig ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-slate-200 text-slate-400 hover:bg-slate-300'}`}><Power size={14} /></button></td>
@@ -200,22 +203,29 @@ export default function MultiPortEditor({
                                 </div>
                             </td>
                             <td className="p-2"><input type="text" placeholder="Description..." className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none transition-colors text-slate-700" value={port.description} onChange={(e) => updatePort(port.id, 'description', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></td>
+                            
+                            {showChannelGroupColumn && (
+                                <td className="p-2">
+                                    <input type="text" maxLength={4} placeholder="ID" className="w-full p-1 border border-slate-200 rounded text-center" value={port.channelGroupId} onChange={(e) => updatePort(port.id, 'channelGroupId', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
+                                </td>
+                            )}
+
                             <td className="p-2">
-                                <select className="w-full bg-slate-100 border-none rounded h-8 pl-2 pr-8 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-200" value={port.mode} onChange={(e) => updatePort(port.id, 'mode', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}>
+                                <select className="w-full bg-slate-100 border-none rounded h-8 pl-2 pr-8 text-xs font-medium text-slate-700 cursor-pointer hover:bg-slate-200" value={port.mode} onChange={(e) => updatePort(port.id, 'mode', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}>
                                     <option value="access">Access</option>
                                     <option value="trunk">Trunk</option>
                                 </select>
                             </td>
                             <td className="p-2">
                                 {port.mode === 'access' ? (
-                                    <input type="text" maxLength={4} placeholder="1" className="w-full p-1 border border-slate-200 rounded text-center" value={port.accessVlan} onChange={(e) => updatePort(port.id, 'accessVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
+                                    <input type="text" maxLength={4} placeholder="1" className="w-full p-1 border border-slate-200 rounded text-center" value={port.accessVlan} onChange={(e) => updatePort(port.id, 'accessVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/>
                                 ) : (
-                                    <input type="text" placeholder="All" className="w-full p-1 border border-slate-200 rounded text-xs text-center" value={port.trunkVlans} onChange={(e) => updatePort(port.id, 'trunkVlans', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
+                                    <input type="text" placeholder="All" className="w-full p-1 border border-slate-200 rounded text-xs text-center" value={port.trunkVlans} onChange={(e) => updatePort(port.id, 'trunkVlans', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/>
                                 )}
                             </td>
 
                             {showFastColumn && (
-                                <td className="p-2 text-center"><input type="checkbox" className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" checked={port.portfast} onChange={(e) => updatePort(port.id, 'portfast', e.target.checked)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></td>
+                                <td className="p-2 text-center"><input type="checkbox" className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500 border-gray-300" checked={port.portfast} onChange={(e) => updatePort(port.id, 'portfast', e.target.checked)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/></td>
                             )}
 
                             {showSecColumn && (
@@ -227,7 +237,7 @@ export default function MultiPortEditor({
                                             checked={port.portSecurity}
                                             onChange={(e) => updatePort(port.id, 'portSecurity', e.target.checked)}
                                             onFocus={() => scrollToPreviewPort(port.id)}
-                                            disabled={!port.includeInConfig && !isSelected}
+                                            disabled={isReadOnly}
                                         />
                                     )}
                                 </td>
@@ -237,11 +247,11 @@ export default function MultiPortEditor({
                                 <td className="p-2">
                                     {port.mode === 'access' ? (
                                         <div className="flex items-center gap-2">
-                                            <input type="checkbox" className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" title="Enable Voice VLAN" checked={!!port.voiceVlan} onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
-                                            {port.voiceVlan ? <input type="text" maxLength={4} className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInCofig && !isSelected}/> : <span className="text-[10px] text-slate-300 italic">No Voice</span>}
+                                            <input type="checkbox" className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500 border-gray-300" title="Enable Voice VLAN" checked={!!port.voiceVlan} onChange={() => toggleVoiceVlan(port.id, port.voiceVlan)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/>
+                                            {port.voiceVlan ? <input type="text" maxLength={4} className="w-10 p-1 text-xs border border-purple-200 bg-purple-50 rounded text-center text-purple-700 font-medium" value={port.voiceVlan} onChange={(e) => updatePort(port.id, 'voiceVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/> : <span className="text-[10px] text-slate-300 italic">No Voice</span>}
                                         </div>
                                     ) : (
-                                        <div className="flex items-center gap-1"><span className="text-[10px] text-slate-400">Native:</span><input type="text" maxLength={4} className="w-12 p-1 text-xs border border-slate-200 rounded" value={port.nativeVlan} onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></div>
+                                        <div className="flex items-center gap-1"><span className="text-[10px] text-slate-400">Native:</span><input type="text" maxLength={4} className="w-12 p-1 text-xs border border-slate-200 rounded" value={port.nativeVlan} onChange={(e) => updatePort(port.id, 'nativeVlan', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/></div>
                                     )}
                                 </td>
                             )}
@@ -253,7 +263,7 @@ export default function MultiPortEditor({
                                         value={port.poeMode || 'auto'}
                                         onChange={(e) => updatePort(port.id, 'poeMode', e.target.value)}
                                         onFocus={() => scrollToPreviewPort(port.id)}
-                                        disabled={!port.includeInConfig && !isSelected}
+                                        disabled={isReadOnly}
                                     >
                                         <option value="auto">Auto</option>
                                         <option value="static">Static</option>

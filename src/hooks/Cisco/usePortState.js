@@ -37,7 +37,8 @@ export function usePortState({ switchModel, uplinkCount, stackSize, portNaming, 
                 mode: isUplink ? 'trunk' : 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
                 portfast: !isUplink, voiceVlan: '', includeInConfig: !isUplink, isUplink: isUplink,
                 noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false, bulkGroupId: null,
-                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
+                channelGroupId: '' // Added for Port-Channel
             };
         }
     }, [baseInterfaceType, uplinkInterfaceType, portNaming, stackSize]);
@@ -60,12 +61,18 @@ export function usePortState({ switchModel, uplinkCount, stackSize, portNaming, 
     }, [switchModel, uplinkCount, stackSize, createPortObject]);
 
     const updatePort = useCallback((id, field, value) => {
-        if (['accessVlan', 'voiceVlan', 'nativeVlan'].includes(field)) { if (!isNumeric(value)) return; }
-        if (['secMax', 'secAgingTime'].includes(field)) { if (!isNumeric(value)) return; }
+        // --- VALIDATION ---
+        if (['accessVlan', 'voiceVlan', 'nativeVlan', 'channelGroupId'].includes(field)) {
+            if (!isNumeric(value)) return;
+        }
+        if (['secMax', 'secAgingTime'].includes(field)) {
+            if (!isNumeric(value)) return;
+        }
         if (field === 'trunkVlans') {
             const lower = value.toLowerCase();
             if (!isVlanRange(value) && !['a', 'al', 'all'].includes(lower)) return;
         }
+
         setPorts(current => current.map(p => p.id === id ? { ...p, [field]: value, bulkGroupId: null } : p));
     }, []);
 

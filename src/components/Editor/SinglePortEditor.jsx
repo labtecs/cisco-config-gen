@@ -1,19 +1,30 @@
 import React from 'react';
-import { ChevronLeft, ChevronRight, RotateCcw, Edit3, Zap, Shield } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, Edit3, Zap, Shield, GitCommit } from 'lucide-react';
+import PortChannelEditor from './PortChannelEditor'; // Import the editor
 
 export default function SinglePortEditor({
-                                             ports,
-                                             singleEditPortId, setSingleEditPortId,
-                                             scrollToPreviewPort,
-                                             singlePort,
-                                             handlePrevPort,
-                                             handleNextPort,
-                                             updatePort,
-                                             toggleNoShut,
-                                             toggleInclude,
-                                             resetPortToDefault
-                                         }) {
+    ports,
+    singleEditPortId, setSingleEditPortId,
+    scrollToPreviewPort,
+    singlePort,
+    handlePrevPort,
+    handleNextPort,
+    updatePort,
+    toggleNoShut,
+    toggleInclude,
+    resetPortToDefault,
+    portChannels,      // Receive portChannels
+    updatePortChannel  // Receive handler
+}) {
     if (!singlePort) return null;
+
+    const isChannelMember = !!singlePort.channelGroupId;
+    const isReadOnly = singlePort.resetOnly || isChannelMember;
+
+    // Find the specific port-channel configuration for the current port
+    const relevantPortChannel = isChannelMember
+        ? portChannels.find(pc => pc.id === singlePort.channelGroupId)
+        : null;
 
     return (
         <div className="p-6 max-w-2xl mx-auto space-y-6">
@@ -60,85 +71,109 @@ export default function SinglePortEditor({
                             </div>
                         </div>
 
+                        {/* Port-Channel Group ID */}
                         <div className="grid grid-cols-2 gap-4 mt-4">
                             <div className="space-y-1">
-                                <label className="text-sm font-medium text-slate-600">Switchport Mode</label>
-                                <select
-                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                <label className="text-sm font-medium text-slate-600 flex items-center gap-1"><GitCommit size={14} /> Port-Channel Group</label>
+                                <input
+                                    type="text"
+                                    className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
                                     disabled={singlePort.resetOnly}
-                                    value={singlePort.mode}
-                                    onChange={(e) => updatePort(singlePort.id, 'mode', e.target.value)}
-                                >
-                                    <option value="access">Access</option>
-                                    <option value="trunk">Trunk</option>
-                                </select>
-                                <p className="text-[10px] text-slate-400">Access für Endgeräte, Trunk für Switches/APs.</p>
-                            </div>
-
-                            <div className="space-y-1">
-                                <label className="text-sm font-medium text-slate-600">
-                                    {singlePort.mode === 'access' ? 'Access VLAN' : 'Allowed VLANs'}
-                                </label>
-                                {singlePort.mode === 'access' ? (
-                                    <input
-                                        type="text"
-                                        className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                        disabled={singlePort.resetOnly}
-                                        value={singlePort.accessVlan}
-                                        onChange={(e) => updatePort(singlePort.id, 'accessVlan', e.target.value)}
-                                    />
-                                ) : (
-                                    <input
-                                        type="text"
-                                        className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                        disabled={singlePort.resetOnly}
-                                        value={singlePort.trunkVlans}
-                                        onChange={(e) => updatePort(singlePort.id, 'trunkVlans', e.target.value)}
-                                    />
-                                )}
-                                <p className="text-[10px] text-slate-400">{singlePort.mode === 'access' ? 'VLAN-ID des Geräts (z.B. 10).' : 'Liste erlaubter VLANs (z.B. 10,20-30).'}</p>
+                                    value={singlePort.channelGroupId}
+                                    onChange={(e) => updatePort(singlePort.id, 'channelGroupId', e.target.value)}
+                                    placeholder="Leave empty for normal port"
+                                />
+                                <p className="text-[10px] text-slate-400">ID, um diesen Port zu einer Gruppe hinzuzufügen.</p>
                             </div>
                         </div>
 
-                        {/* Extra VLANs */}
-                        <div className="grid grid-cols-2 gap-4 mt-4">
-                            {singlePort.mode === 'access' && (
+                        {isChannelMember && (
+                            <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg text-center text-sm text-purple-800">
+                                This port is a member of a Port-Channel. All L2 settings are managed on the Port-Channel interface itself.
+                            </div>
+                        )}
+
+                        <div className={isReadOnly ? 'opacity-50 pointer-events-none' : ''}>
+                            <div className="grid grid-cols-2 gap-4 mt-4">
                                 <div className="space-y-1">
-                                    <label className="text-sm font-medium text-slate-600">Voice VLAN</label>
-                                    <div className="flex gap-2">
+                                    <label className="text-sm font-medium text-slate-600">Switchport Mode</label>
+                                    <select
+                                        className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                        disabled={isReadOnly}
+                                        value={singlePort.mode}
+                                        onChange={(e) => updatePort(singlePort.id, 'mode', e.target.value)}
+                                    >
+                                        <option value="access">Access</option>
+                                        <option value="trunk">Trunk</option>
+                                    </select>
+                                    <p className="text-[10px] text-slate-400">Access für Endgeräte, Trunk für Switches/APs.</p>
+                                </div>
+
+                                <div className="space-y-1">
+                                    <label className="text-sm font-medium text-slate-600">
+                                        {singlePort.mode === 'access' ? 'Access VLAN' : 'Allowed VLANs'}
+                                    </label>
+                                    {singlePort.mode === 'access' ? (
                                         <input
                                             type="text"
-                                            className="flex-1 p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                            disabled={singlePort.resetOnly}
-                                            value={singlePort.voiceVlan}
-                                            onChange={(e) => updatePort(singlePort.id, 'voiceVlan', e.target.value)}
-                                            placeholder="None"
+                                            className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                            disabled={isReadOnly}
+                                            value={singlePort.accessVlan}
+                                            onChange={(e) => updatePort(singlePort.id, 'accessVlan', e.target.value)}
                                         />
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                            disabled={isReadOnly}
+                                            value={singlePort.trunkVlans}
+                                            onChange={(e) => updatePort(singlePort.id, 'trunkVlans', e.target.value)}
+                                        />
+                                    )}
+                                    <p className="text-[10px] text-slate-400">{singlePort.mode === 'access' ? 'VLAN-ID des Geräts (z.B. 10).' : 'Liste erlaubter VLANs (z.B. 10,20-30).'}</p>
+                                </div>
+                            </div>
+
+                            {/* Extra VLANs */}
+                            <div className="grid grid-cols-2 gap-4 mt-4">
+                                {singlePort.mode === 'access' && (
+                                    <div className="space-y-1">
+                                        <label className="text-sm font-medium text-slate-600">Voice VLAN</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                className="flex-1 p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                                disabled={isReadOnly}
+                                                value={singlePort.voiceVlan}
+                                                onChange={(e) => updatePort(singlePort.id, 'voiceVlan', e.target.value)}
+                                                placeholder="None"
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-slate-400">Separtes VLAN für VoIP-Telefone.</p>
                                     </div>
-                                    <p className="text-[10px] text-slate-400">Separtes VLAN für VoIP-Telefone.</p>
-                                </div>
-                            )}
-                            {singlePort.mode === 'trunk' && (
-                                <div className="space-y-1">
-                                    <label className="text-sm font-medium text-slate-600">Native VLAN</label>
-                                    <input
-                                        type="text"
-                                        className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
-                                        disabled={singlePort.resetOnly}
-                                        value={singlePort.nativeVlan}
-                                        onChange={(e) => updatePort(singlePort.id, 'nativeVlan', e.target.value)}
-                                    />
-                                    <p className="text-[10px] text-slate-400">Ungetaggter Traffic (Standard: 1).</p>
-                                </div>
-                            )}
+                                )}
+                                {singlePort.mode === 'trunk' && (
+                                    <div className="space-y-1">
+                                        <label className="text-sm font-medium text-slate-600">Native VLAN</label>
+                                        <input
+                                            type="text"
+                                            className="w-full p-2 border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                            disabled={isReadOnly}
+                                            value={singlePort.nativeVlan}
+                                            onChange={(e) => updatePort(singlePort.id, 'nativeVlan', e.target.value)}
+                                        />
+                                        <p className="text-[10px] text-slate-400">Ungetaggter Traffic (Standard: 1).</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
 
                     {/* Toggles */}
                     <div className="pt-4 border-t border-slate-100 grid grid-cols-3 gap-4">
-                        <label className={`flex flex-col gap-1 cursor-pointer p-2 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition ${singlePort.resetOnly ? 'opacity-50 pointer-events-none' : ''}`}>
+                        <label className={`flex flex-col gap-1 cursor-pointer p-2 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition ${isReadOnly ? 'opacity-50 pointer-events-none' : ''}`}>
                             <div className="flex items-center gap-2">
-                                <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" disabled={singlePort.resetOnly} checked={singlePort.portfast} onChange={(e) => updatePort(singlePort.id, 'portfast', e.target.checked)} />
+                                <input type="checkbox" className="w-4 h-4 text-blue-600 rounded" disabled={isReadOnly} checked={singlePort.portfast} onChange={(e) => updatePort(singlePort.id, 'portfast', e.target.checked)} />
                                 <span className="text-sm font-medium text-slate-700">PortFast</span>
                             </div>
                             <span className="text-[10px] text-slate-400 pl-6">Beschleunigt Link-Up. Nur für Endgeräte!</span>
@@ -176,7 +211,7 @@ export default function SinglePortEditor({
             </div>
 
             {/* POE CONFIG FORM */}
-            <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-opacity ${singlePort.resetOnly ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-opacity ${isReadOnly ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-semibold text-slate-700 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Zap size={16} className="text-yellow-600"/> Power over Ethernet (PoE)
@@ -204,7 +239,7 @@ export default function SinglePortEditor({
             </div>
 
             {/* SECURITY CONFIG FORM */}
-            <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-opacity ${singlePort.resetOnly ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden transition-opacity ${isReadOnly ? 'opacity-50 pointer-events-none' : ''}`}>
                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-200 font-semibold text-slate-700 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Shield size={16}/> Security Configuration
@@ -290,6 +325,14 @@ export default function SinglePortEditor({
                     </div>
                 )}
             </div>
+
+            {/* Conditionally render the PortChannelEditor */}
+            {relevantPortChannel && (
+                <PortChannelEditor
+                    portChannels={[relevantPortChannel]}
+                    updatePortChannel={updatePortChannel}
+                />
+            )}
         </div>
     );
 }
