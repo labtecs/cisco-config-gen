@@ -3,62 +3,59 @@ import { isNumeric, isVlanRange } from '../../utils/ciscoHelpers';
 
 /**
  * Manages the state and logic for the port list itself.
- * @param {object} initialState - Contains initial values for switchModel, uplinkCount, etc.
+ * @param {object} initialState - Contains initial values for stackMembers, etc.
  * @returns {object} State and handlers for port management.
  */
-export function usePortState({ switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType }) {
+export function usePortState({ stackMembers, portNaming }) {
     const [ports, setPorts] = useState([]);
 
-    const createPortObject = useCallback((existingMap, stackMember, portNum, isUplink) => {
+    const createPortObject = useCallback((existingMap, stackMember, portNum, module, isUplink, memberConfig) => {
+        const { baseInterfaceType, uplinkInterfaceType } = memberConfig;
         const type = isUplink ? uplinkInterfaceType : baseInterfaceType;
         let portId;
         let interfaceName;
-        if (portNaming === 'simple') {
-            portId = `0/${portNum}`;
-            interfaceName = `${type}0/${portNum}`;
-            if (stackSize > 1) {
-                portId = `${stackMember}/0/${portNum}`;
-                interfaceName = `${type}${stackMember}/0/${portNum}`;
-            }
+
+        if (portNaming === 'simple' && stackMembers.length === 1) {
+            portId = `${module}/${portNum}`;
+            interfaceName = `${type}${module}/${portNum}`;
         } else {
-            portId = `${stackMember}/0/${portNum}`;
-            interfaceName = `${type}${stackMember}/0/${portNum}`;
+            portId = `${stackMember}/${module}/${portNum}`;
+            interfaceName = `${type}${stackMember}/${module}/${portNum}`;
         }
+
         let existing = existingMap.get(portId);
-        if (!existing && stackMember === 1) {
-            if (portId === `0/${portNum}`) existing = existingMap.get(`1/0/${portNum}`);
-            else if (portId === `1/0/${portNum}`) existing = existingMap.get(`0/${portNum}`);
-        }
         if (existing) {
             return { ...existing, id: portId, name: interfaceName, isUplink, bulkGroupId: null };
         } else {
             return {
                 id: portId, name: interfaceName, description: isUplink ? 'Uplink' : '',
                 mode: isUplink ? 'trunk' : 'access', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
-                portfast: !isUplink, voiceVlan: '', includeInConfig: !isUplink, isUplink: isUplink,
+                portfast: !isUplink, voiceVlan: '', includeInConfig: false, isUplink: isUplink,
                 noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false, bulkGroupId: null,
                 portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
-                channelGroupId: '' // Added for Port-Channel
+                channelGroupId: ''
             };
         }
-    }, [baseInterfaceType, uplinkInterfaceType, portNaming, stackSize]);
+    }, [portNaming, stackMembers.length]);
 
     const generatePortList = useCallback(() => {
         setPorts(currentPorts => {
             const currentPortsMap = new Map(currentPorts.map(p => [p.id, p]));
             let newPorts = [];
-            for (let stackMember = 1; stackMember <= stackSize; stackMember++) {
-                for (let portNum = 1; portNum <= switchModel; portNum++) {
-                    newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, false));
+            stackMembers.forEach((member, index) => {
+                const stackMemberNum = index + 1;
+                // Base ports
+                for (let portNum = 1; portNum <= member.model; portNum++) {
+                    newPorts.push(createPortObject(currentPortsMap, stackMemberNum, portNum, 0, false, member));
                 }
-                for (let u = 1; u <= uplinkCount; u++) {
-                    const portNum = switchModel + u;
-                    newPorts.push(createPortObject(currentPortsMap, stackMember, portNum, true));
+                // Uplink ports
+                for (let u = 1; u <= member.uplinkCount; u++) {
+                    newPorts.push(createPortObject(currentPortsMap, stackMemberNum, u, 1, true, member));
                 }
-            }
+            });
             return newPorts;
         });
-    }, [switchModel, uplinkCount, stackSize, createPortObject]);
+    }, [stackMembers, createPortObject]);
 
     const updatePort = useCallback((id, field, value) => {
         // --- VALIDATION ---

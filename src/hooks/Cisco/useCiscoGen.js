@@ -15,13 +15,11 @@ import { parseVlanString } from '../../utils/ciscoHelpers';
  */
 export function useCiscoGen({ fileContent }) {
     // --- STATE DEFINITIONS ---
-    const [switchModel, setSwitchModel] = useState(48);
-    const [uplinkCount, setUplinkCount] = useState(4);
-    const [stackSize, setStackSize] = useState(1);
+    const [stackMembers, setStackMembers] = useState([
+        { model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' }
+    ]);
     const [portNaming, setPortNaming] = useState('stack');
     const [portLayout, setPortLayout] = useState('two-row');
-    const [baseInterfaceType, setBaseInterfaceType] = useState('GigabitEthernet');
-    const [uplinkInterfaceType, setUplinkInterfaceType] = useState('TenGigabitEthernet');
     const [globalVoiceVlan, setGlobalVoiceVlan] = useState('');
     const [hostname, setHostname] = useState('');
     const [iosVersion, setIosVersion] = useState('');
@@ -48,7 +46,7 @@ export function useCiscoGen({ fileContent }) {
     const [singleEditPortId, setSingleEditPortId] = useState(null);
 
     // UI States
-    const [detectedVlans, setDetectedVlans] = useState([]);
+    const [declaredVlans, setDeclaredVlans] = useState([]);
     const [vlanNames, setVlanNames] = useState({});
     const [toast, setToast] = useState({ show: false, message: '' });
     const [confirmClearDesc, setConfirmClearDesc] = useState(false);
@@ -58,7 +56,7 @@ export function useCiscoGen({ fileContent }) {
     const [showSecurityOptions, setShowSecurityOptions] = useState(false);
 
     // --- COMPOSING SUB-HOOKS ---
-    const { ports, setPorts, generatePortList, updatePort } = usePortState({ switchModel, uplinkCount, stackSize, portNaming, baseInterfaceType, uplinkInterfaceType });
+    const { ports, setPorts, generatePortList, updatePort } = usePortState({ stackMembers, portNaming });
     const { selectedPortIds, toggleSelection, toggleSelectAll, selectPortsByVlan, clearSelection } = useSelection(ports);
     const { bulkState, setBulkState, applyBulkEdit } = useBulkEdit({ setPorts, selectedPortIds, globalVoiceVlan });
     const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands });
@@ -104,11 +102,14 @@ export function useCiscoGen({ fileContent }) {
     const resetState = useCallback(() => {
         setHostname('');
         setIosVersion('');
-        setDetectedVlans([]);
+        setDeclaredVlans([]);
         setVlanNames({});
         setGlobalVoiceVlan('');
         setPorts([]);
         setPortChannels([]); // Also reset port-channels
+        setStackMembers([
+            { model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' }
+        ]);
         setTimeout(() => generatePortList(), 0);
     }, [generatePortList, setPorts]);
 
@@ -119,15 +120,11 @@ export function useCiscoGen({ fileContent }) {
             setHostname(parsedData.hostname);
             setIosVersion(parsedData.iosVersion);
             setUseModernPortfast(parsedData.useModernPortfast);
-            setDetectedVlans(parsedData.detectedVlans);
+            setDeclaredVlans(parsedData.declaredVlans);
             setVlanNames(parsedData.vlanNames);
             setGlobalVoiceVlan(parsedData.globalVoiceVlan);
             setPortNaming(parsedData.portNaming);
-            setStackSize(parsedData.stackSize);
-            setSwitchModel(parsedData.switchModel);
-            setUplinkCount(parsedData.uplinkCount);
-            setBaseInterfaceType(parsedData.baseInterfaceType);
-            setUplinkInterfaceType(parsedData.uplinkInterfaceType);
+            setStackMembers(parsedData.stackMembers);
             setPorts(parsedData.ports);
             setPortChannels(parsedData.portChannels || []); // Set parsed port-channels
         } else {
@@ -142,7 +139,7 @@ export function useCiscoGen({ fileContent }) {
 
     const availableVlans = useMemo(() => {
         const activeOnPorts = new Set();
-        const allVlans = new Set(detectedVlans);
+        const allVlans = new Set(declaredVlans);
         const complexRanges = new Set();
 
         ports.forEach(p => {
@@ -168,14 +165,14 @@ export function useCiscoGen({ fileContent }) {
 
         const singleVlans = Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
             const strVlan = String(vlan);
-            const isDetected = detectedVlans.some(d => String(d) === strVlan);
+            const isDeclared = declaredVlans.some(d => String(d) === strVlan);
             const isUsed = activeOnPorts.has(strVlan);
             const name = vlanNames[strVlan];
 
             let status = 'manual';
             if (strVlan === '1') status = 'default';
-            else if (isDetected && isUsed) status = 'used';
-            else if (isDetected && !isUsed) status = 'unused';
+            else if (isDeclared && isUsed) status = 'used';
+            else if (isDeclared && !isUsed) status = 'unused';
 
             return { id: strVlan, status, name, isRange: false };
         });
@@ -190,7 +187,7 @@ export function useCiscoGen({ fileContent }) {
         });
 
         return [...singleVlans, ...rangeVlans];
-    }, [detectedVlans, ports, vlanNames]);
+    }, [declaredVlans, ports, vlanNames]);
 
     const toggleInclude = (id) => { setPorts(ports.map(p => p.id === id ? { ...p, includeInConfig: !p.includeInConfig } : p)); };
     const toggleGlobalInclude = () => {
@@ -296,13 +293,9 @@ export function useCiscoGen({ fileContent }) {
 
     return {
         // State
-        switchModel, setSwitchModel,
-        uplinkCount, setUplinkCount,
-        stackSize, setStackSize,
+        stackMembers, setStackMembers,
         portNaming, setPortNaming,
         portLayout, setPortLayout,
-        baseInterfaceType, setBaseInterfaceType,
-        uplinkInterfaceType, setUplinkInterfaceType,
         globalVoiceVlan, setGlobalVoiceVlan,
         hostname, iosVersion,
         includeWrMem, setIncludeWrMem,

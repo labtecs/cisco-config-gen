@@ -13,57 +13,61 @@ export function useConfigParsing() {
 
         const lines = text.split('\n');
         let newPortsMap = new Map();
-        const interfaceRegex = /^interface\s+([a-zA-Z-]+)([0-9/.]+)/i; // Adjusted to include Port-channel
+        const interfaceRegex = /^interface\s+([a-zA-Z-]+)([0-9/.]+)/i;
         let detectedNaming = 'simple';
-        let detectedStackSize = 1;
-        let detectedMaxPort = 0;
-        const typeCounts = {};
         const voiceVlanCounts = {};
-        const foundVlans = new Set();
+        const declaredVlans = new Set();
         const detectedVlanNames = {};
         let currentDefVlanId = null;
-
         let parsedPortChannels = [];
         let currentPortChannel = null;
+        const provisionedSwitches = new Map();
 
         lines.forEach(line => {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
+
             if (match && !match[1].toLowerCase().includes('vlan')) {
-                if (!match[1].toLowerCase().startsWith('port-channel')) {
-                    typeCounts[match[1]] = (typeCounts[match[1]] || 0) + 1;
-                }
+                // Interface found
             }
 
             if (trimmed.includes('switchport voice vlan')) {
                 const [, vlanPart] = trimmed.split('vlan ');
                 const v = vlanPart?.split(/\s+/)[0];
-                if(v) { voiceVlanCounts[v] = (voiceVlanCounts[v] || 0) + 1; }
+                if (v) { voiceVlanCounts[v] = (voiceVlanCounts[v] || 0) + 1; }
             }
-            if (trimmed.includes('switchport access vlan')) {
-                const [, vlanPart] = trimmed.split('vlan ');
-                const v = vlanPart?.split(/\s+/)[0];
-                if(v) foundVlans.add(v);
-            }
+
             const sviMatch = trimmed.match(/^interface Vlan\s?(\d+)/i);
-            if (sviMatch && sviMatch[1]) foundVlans.add(sviMatch[1]);
+            if (sviMatch && sviMatch[1]) declaredVlans.add(sviMatch[1]);
 
             const l2Match = trimmed.match(/^vlan\s+(\d+)/i);
             if (l2Match && l2Match[1]) {
-                foundVlans.add(l2Match[1]);
+                declaredVlans.add(l2Match[1]);
                 currentDefVlanId = l2Match[1];
             } else if (currentDefVlanId && trimmed.startsWith('name ')) {
                 detectedVlanNames[currentDefVlanId] = trimmed.substring(5).trim();
             }
             if (trimmed.startsWith('interface') || trimmed === '!') currentDefVlanId = null;
+
+            const provisionMatch = trimmed.match(/^switch\s+(\d+)\s+provision\s+([a-zA-Z0-9-]+)/i);
+            if (provisionMatch) {
+                const [, switchNum, model] = provisionMatch;
+                let portCount = 24; // Default
+                if (model.includes('12')) portCount = 12;
+                if (model.includes('24')) portCount = 24;
+                if (model.includes('48')) portCount = 48;
+                
+                let baseType = 'GigabitEthernet';
+                if (model.includes('xs')) baseType = 'TenGigabitEthernet';
+
+                provisionedSwitches.set(parseInt(switchNum), {
+                    model: portCount,
+                    uplinkCount: 4, // This might need to be dynamic based on model
+                    baseInterfaceType: baseType,
+                    uplinkInterfaceType: 'TenGigabitEthernet' // Default, can be refined
+                });
+            }
         });
-
-        const sortedTypes = Object.entries(typeCounts).sort(([,a],[,b]) => b - a);
-        let detBase = sortedTypes[0]?.[0] || 'GigabitEthernet';
-        let detUplink = sortedTypes[1]?.[0] || detBase;
-
-        const finalBaseType = expandInterfaceType(detBase);
-        const finalUplinkType = expandInterfaceType(detUplink);
 
         let maxCount = 0;
         let detectedVoiceVlan = '';
@@ -77,7 +81,6 @@ export function useConfigParsing() {
             const match = trimmed.match(interfaceRegex);
 
             if (match) {
-                // Finalize previous interface
                 if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
                 if (currentPortChannel) parsedPortChannels.push(currentPortChannel);
                 currentInterface = null;
@@ -97,14 +100,9 @@ export function useConfigParsing() {
                     };
                 } else {
                     const parts = numbering.split('/');
-                    if (parts.length === 3) {
-                        detectedNaming = 'stack';
-                        detectedStackSize = Math.max(detectedStackSize, parseInt(parts[0]));
-                        detectedMaxPort = Math.max(detectedMaxPort, parseInt(parts[2]));
-                    } else if (parts.length === 2) {
-                        detectedNaming = 'simple';
-                        detectedMaxPort = Math.max(detectedMaxPort, parseInt(parts[1]));
-                    }
+                    if (parts.length === 3) detectedNaming = 'stack';
+                    else if (parts.length === 2) detectedNaming = 'simple';
+                    
                     currentInterface = {
                         id: numbering, name: `${expandInterfaceType(match[1])}${numbering}`, description: '', mode: 'access', accessVlan: '', trunkVlans: '', nativeVlan: 1,
                         portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false, bulkGroupId: null,
@@ -114,7 +112,6 @@ export function useConfigParsing() {
                     };
                 }
             } else if (currentInterface) {
-                // --- Physical Interface Parsing ---
                 if (trimmed.startsWith('description')) { currentInterface.description = trimmed.replace('description ', ''); currentInterface.includeInConfig = true; }
                 else if (trimmed.startsWith('channel-group')) {
                     const cgMatch = trimmed.match(/channel-group\s+(\d+)/);
@@ -126,9 +123,7 @@ export function useConfigParsing() {
                 else if (trimmed.includes('spanning-tree portfast')) { currentInterface.portfast = true; currentInterface.includeInConfig = true; }
                 else if (trimmed.includes('switchport voice vlan')) { currentInterface.voiceVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? ''; currentInterface.includeInConfig = true; }
                 else if (trimmed === 'shutdown') { currentInterface.noShutdown = false; }
-                // ... other physical port parsing
             } else if (currentPortChannel) {
-                // --- Port-Channel Interface Parsing ---
                 if (trimmed.startsWith('description')) { currentPortChannel.description = trimmed.replace('description ', ''); }
                 else if (trimmed.includes('switchport mode access')) { currentPortChannel.mode = 'access'; }
                 else if (trimmed.includes('switchport mode trunk')) { currentPortChannel.mode = 'trunk'; }
@@ -137,25 +132,24 @@ export function useConfigParsing() {
                 else if (trimmed.includes('switchport trunk native vlan')) { currentPortChannel.nativeVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? 1; }
             }
         });
-        // Finalize the last interface
         if (currentInterface) newPortsMap.set(currentInterface.id, currentInterface);
         if (currentPortChannel) parsedPortChannels.push(currentPortChannel);
 
-        let bestFitModel = 48;
-        let uplinks = 4;
-        if (detectedMaxPort <= 8) { bestFitModel = 8; uplinks = 2; }
-        else if (detectedMaxPort <= 12) { bestFitModel = 12; uplinks = 2; }
-        else if (detectedMaxPort <= 16) { bestFitModel = 16; uplinks = 2; }
-        else if (detectedMaxPort <= 24) { bestFitModel = 24; uplinks = 4; }
-        else { bestFitModel = 48; uplinks = 4; }
+        const finalStackMembers = [];
+        if (provisionedSwitches.size > 0) {
+            const sortedKeys = Array.from(provisionedSwitches.keys()).sort((a, b) => a - b);
+            sortedKeys.forEach(key => finalStackMembers.push(provisionedSwitches.get(key)));
+        } else {
+            finalStackMembers.push({ model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' });
+        }
 
         const newPorts = [];
-        for (let s = 1; s <= detectedStackSize; s++) {
-            for (let p = 1; p <= bestFitModel; p++) {
-                let genId = detectedNaming === 'simple' ? `0/${p}` : `${s}/0/${p}`;
-                if (detectedNaming === 'simple' && detectedStackSize > 1) genId = `${s}/0/${p}`;
+        finalStackMembers.forEach((member, index) => {
+            const stackNum = index + 1;
+            for (let p = 1; p <= member.model; p++) {
+                const genId = `${stackNum}/0/${p}`;
                 const parsed = newPortsMap.get(genId);
-                const name = parsed ? parsed.name : `${finalBaseType}${genId}`;
+                const name = parsed ? parsed.name : `${member.baseInterfaceType}${genId}`;
                 if (parsed) {
                     newPorts.push({ ...parsed, name, isUplink: false });
                 } else {
@@ -168,24 +162,35 @@ export function useConfigParsing() {
                     });
                 }
             }
-            // ... uplink generation logic remains the same
-        }
+            for (let u = 1; u <= member.uplinkCount; u++) {
+                const genId = `${stackNum}/1/${u}`;
+                const parsed = newPortsMap.get(genId);
+                const name = parsed ? parsed.name : `${member.uplinkInterfaceType}${genId}`;
+                if (parsed) {
+                    newPorts.push({ ...parsed, name, isUplink: true });
+                } else {
+                    newPorts.push({
+                        id: genId, name, description: 'Uplink', mode: 'trunk', accessVlan: '', trunkVlans: 'all', nativeVlan: 1,
+                        portfast: false, voiceVlan: '', includeInConfig: false, isUplink: true, bulkGroupId: null,
+                        noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false,
+                        portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
+                        channelGroupId: ''
+                    });
+                }
+            }
+        });
 
         return {
             hostname: hostnameMatch?.[1] || '',
             iosVersion: versionMatch?.[1] || '',
             useModernPortfast,
-            detectedVlans: Array.from(foundVlans).filter(v => v).sort((a,b) => parseInt(a) - parseInt(b)),
+            declaredVlans: Array.from(declaredVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)),
             vlanNames: detectedVlanNames,
             globalVoiceVlan: detectedVoiceVlan,
             portNaming: detectedNaming,
-            stackSize: detectedStackSize,
-            switchModel: bestFitModel,
-            uplinkCount: uplinks,
-            baseInterfaceType: finalBaseType,
-            uplinkInterfaceType: finalUplinkType,
+            stackMembers: finalStackMembers,
             ports: newPorts,
-            portChannels: parsedPortChannels, // Return parsed port-channels
+            portChannels: parsedPortChannels,
         };
     }, []);
 
