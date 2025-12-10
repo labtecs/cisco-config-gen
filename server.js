@@ -20,7 +20,7 @@ app.post('/api/connect', (req, res) => {
     conn.on('ready', () => {
         console.log('[SSH] Connection established. Executing command...');
 
-        conn.exec('show running-config', (err, stream) => {
+        conn.exec('show running-config view full', (err, stream) => {
             if (err) {
                 const execErrorMessage = err ? err.toString() : 'An unknown exec error occurred.';
                 console.error('[SSH] Exec error:', execErrorMessage);

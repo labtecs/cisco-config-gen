@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { usePortState } from './usePortState';
 import { useSelection } from './useSelection';
 import { useBulkEdit } from './useBulkEdit';
@@ -61,6 +61,7 @@ export function useCiscoGen({ fileContent }) {
     const { bulkState, setBulkState, applyBulkEdit } = useBulkEdit({ setPorts, selectedPortIds, globalVoiceVlan });
     const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands });
     const { parseRunningConfig } = useConfigParsing();
+    const isParsingRef = useRef(false);
 
     // --- PORT-CHANNEL LOGIC (IF MANUALLY CREATED) ---
     useEffect(() => {
@@ -115,6 +116,7 @@ export function useCiscoGen({ fileContent }) {
     // --- MAIN EFFECT FOR FILE PARSING ---
     useEffect(() => {
         if (fileContent) {
+            isParsingRef.current = true;
             const parsedData = parseRunningConfig(fileContent);
             setHostname(parsedData.hostname);
             setIosVersion(parsedData.iosVersion);
@@ -126,12 +128,22 @@ export function useCiscoGen({ fileContent }) {
             setStackMembers(parsedData.stackMembers);
             setPorts(parsedData.ports);
             setPortChannels(parsedData.portChannels || []); // Set parsed port-channels
+
+            // Safety timeout to reset the ref in case stackMembers didn't change
+            // (which would prevent the generation effect from running and resetting the flag)
+            setTimeout(() => { isParsingRef.current = false; }, 500);
         } else {
             resetState();
         }
     }, [fileContent, parseRunningConfig, resetState, setPorts]);
 
-    useEffect(() => { generatePortList(); }, [generatePortList]);
+    useEffect(() => {
+        if (isParsingRef.current) {
+            isParsingRef.current = false;
+            return;
+        }
+        generatePortList();
+    }, [generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
     // ... rest of the hook remains the same ...
