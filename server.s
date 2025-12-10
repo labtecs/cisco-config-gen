@@ -56,7 +56,7 @@ app.post('/api/connect', (req, res) => {
                         return res.status(500).json({ error: errorData.trim() });
                     }
                 }
-                
+
                 res.json({ success: true, config: configData });
             });
         });

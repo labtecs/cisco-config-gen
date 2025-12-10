@@ -11,9 +11,10 @@ export function useConfigParsing() {
         const versionMatch = text.match(/^version\s+(\d+\.?\d*)/m);
         const useModernPortfast = text.includes('spanning-tree portfast edge');
 
-        const lines = text.split('\n');
+        // Normalize line endings to handle SSH output (\r\n) correctly
+        const lines = text.replace(/\r\n/g, '\n').split('\n');
         let newPortsMap = new Map();
-        const interfaceRegex = /^interface\s+([a-zA-Z-]+)([0-9/.]+)/i;
+        const interfaceRegex = /^interface\s+([a-zA-Z-]+)\s*([0-9/.]+)/i;
         let detectedNaming = 'simple';
         const voiceVlanCounts = {};
         const declaredVlans = new Set();
@@ -23,12 +24,17 @@ export function useConfigParsing() {
         let currentPortChannel = null;
         const provisionedSwitches = new Map();
 
+        // First pass to find stack members and determine naming convention robustly
         lines.forEach(line => {
             const trimmed = line.trim();
             const match = trimmed.match(interfaceRegex);
 
-            if (match && !match[1].toLowerCase().includes('vlan')) {
-                // Interface found
+            // Determine naming convention
+            if (match && !match[1].toLowerCase().includes('vlan') && !match[1].toLowerCase().startsWith('port-channel')) {
+                const parts = match[2].split('/');
+                if (parts.length === 3) {
+                    detectedNaming = 'stack';
+                }
             }
 
             if (trimmed.includes('switchport voice vlan')) {
@@ -98,11 +104,7 @@ export function useConfigParsing() {
                         trunkVlans: 'all',
                         nativeVlan: 1,
                     };
-                } else {
-                    const parts = numbering.split('/');
-                    if (parts.length === 3) detectedNaming = 'stack';
-                    else if (parts.length === 2) detectedNaming = 'simple';
-                    
+                } else if (!type.startsWith('vlan')) { // Process only physical interfaces
                     currentInterface = {
                         id: numbering, name: `${expandInterfaceType(match[1])}${numbering}`, description: '', mode: 'access', accessVlan: '', trunkVlans: '', nativeVlan: 1,
                         portfast: false, voiceVlan: '', includeInConfig: false, isUplink: false, bulkGroupId: null,
@@ -140,14 +142,64 @@ export function useConfigParsing() {
             const sortedKeys = Array.from(provisionedSwitches.keys()).sort((a, b) => a - b);
             sortedKeys.forEach(key => finalStackMembers.push(provisionedSwitches.get(key)));
         } else {
-            finalStackMembers.push({ model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' });
+            // Auto-detect from parsed ports if no provision found
+            let maxBase = 0;
+            let maxUplink = 0;
+            let detectedBaseType = 'GigabitEthernet';
+            let detectedUplinkType = 'TenGigabitEthernet';
+
+            for (const [id, port] of newPortsMap) {
+                const parts = id.split('/');
+                const type = port.name.replace(/[0-9/.]+$/, '');
+
+                if (detectedNaming === 'simple') {
+                    // Expect 0/X for base, 1/X for uplink
+                    if (parts.length === 2) {
+                        const mod = parseInt(parts[0]);
+                        const p = parseInt(parts[1]);
+                        if (mod === 0) {
+                            if (p > maxBase) maxBase = p;
+                            detectedBaseType = type;
+                        } else if (mod === 1) {
+                            if (p > maxUplink) maxUplink = p;
+                            detectedUplinkType = type;
+                        }
+                    }
+                } else {
+                    // Stack: S/0/P or S/1/P
+                    if (parts.length === 3) {
+                        const stack = parseInt(parts[0]);
+                        const mod = parseInt(parts[1]);
+                        const p = parseInt(parts[2]);
+                        if (stack === 1) {
+                            if (mod === 0) {
+                                if (p > maxBase) maxBase = p;
+                                detectedBaseType = type;
+                            } else if (mod === 1) {
+                                if (p > maxUplink) maxUplink = p;
+                                detectedUplinkType = type;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (maxBase === 0) maxBase = 48; // Fallback
+            if (maxUplink === 0 && maxBase === 48) maxUplink = 4; // Fallback only if we defaulted base
+
+            finalStackMembers.push({ 
+                model: maxBase, 
+                uplinkCount: maxUplink, 
+                baseInterfaceType: detectedBaseType, 
+                uplinkInterfaceType: detectedUplinkType 
+            });
         }
 
         const newPorts = [];
         finalStackMembers.forEach((member, index) => {
             const stackNum = index + 1;
             for (let p = 1; p <= member.model; p++) {
-                const genId = `${stackNum}/0/${p}`;
+                const genId = detectedNaming === 'simple' ? `0/${p}` : `${stackNum}/0/${p}`;
                 const parsed = newPortsMap.get(genId);
                 const name = parsed ? parsed.name : `${member.baseInterfaceType}${genId}`;
                 if (parsed) {
@@ -163,7 +215,7 @@ export function useConfigParsing() {
                 }
             }
             for (let u = 1; u <= member.uplinkCount; u++) {
-                const genId = `${stackNum}/1/${u}`;
+                const genId = detectedNaming === 'simple' ? `1/${u}` : `${stackNum}/1/${u}`;
                 const parsed = newPortsMap.get(genId);
                 const name = parsed ? parsed.name : `${member.uplinkInterfaceType}${genId}`;
                 if (parsed) {

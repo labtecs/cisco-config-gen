@@ -1,20 +1,6 @@
 import React from 'react';
-import { Layers, Zap, GitCommit } from 'lucide-react';
+import { Layers, Zap } from 'lucide-react';
 
-/**
- * Renders a single, clickable switch port with visual indicators for its state.
- * It handles different styles for trunk/access mode, selection, and PoE status.
- * It also displays a detailed tooltip on hover.
- *
- * @param {object} props - The component props.
- * @param {object} props.portData - The data object for this specific port.
- * @param {number} props.portNum - The physical port number to display.
- * @param {boolean} props.isSelected - True if the port is currently in the bulk selection.
- * @param {boolean} props.isCurrentSingle - True if this is the port being edited in single-view mode.
- * @param {function} props.onPortClick - The callback function to execute when the port is clicked.
- * @param {boolean} props.isTopRow - True if the port should be rendered in the top row (affects border and indicator positions).
- * @returns {JSX.Element|null} The rendered port component or null if portData is missing.
- */
 const Port = ({ portData, portNum, isSelected, isCurrentSingle, onPortClick, isTopRow }) => {
     if (!portData) return null;
 
@@ -61,24 +47,27 @@ const Port = ({ portData, portNum, isSelected, isCurrentSingle, onPortClick, isT
     );
 };
 
-/**
- * Renders a visual representation of one or more network switches based on provided properties.
- * It displays the main ports in two rows and separate uplink ports.
- * It also shows metadata like hostname and iOS version.
- */
 export default function SwitchVisualizer({
     stackMembers, portLayout, ports,
     selectedPortIds, viewMode, singleEditPortId, onPortClick,
-    hostname, iosVersion
+    hostname, iosVersion, portNaming
 }) {
     const getPortsForSwitch = (switchIndex) => {
+        if (portNaming === 'simple') {
+            return ports; // For simple naming, all ports belong to the single switch
+        }
         const switchNum = switchIndex + 1;
         return ports.filter(p => p.id.startsWith(`${switchNum}/`));
     };
 
-    const renderPorts = (portList, isTopRow, switchIndex) => {
+    const getPortNumber = (id) => {
+        const parts = id.split('/');
+        return parts[parts.length - 1];
+    };
+
+    const renderPorts = (portList, isTopRow) => {
         return portList.map((portData) => {
-            const portNum = parseInt(portData.id.split('/')[2]);
+            const portNum = getPortNumber(portData.id);
             return (
                 <Port
                     key={portData.id}
@@ -114,6 +103,8 @@ export default function SwitchVisualizer({
                     const basePorts = switchPorts.filter(p => !p.isUplink);
                     const uplinkPorts = switchPorts.filter(p => p.isUplink);
 
+                    if (switchPorts.length === 0) return null; // Don't render a switch if it has no ports
+
                     return (
                         <div key={stackIndex} className="mb-6 last:mb-0">
                             {stackMembers.length > 1 && <div className="text-xs font-bold text-slate-400 mb-1">Switch {stackIndex + 1}</div>}
@@ -122,11 +113,11 @@ export default function SwitchVisualizer({
                                 <div className="flex flex-col gap-2">
                                     {portLayout === 'two-row' ? (
                                         <>
-                                            <div className="flex gap-2">{renderPorts(basePorts.filter((_, i) => i % 2 === 0), true, stackIndex)}</div>
-                                            <div className="flex gap-2">{renderPorts(basePorts.filter((_, i) => i % 2 !== 0), false, stackIndex)}</div>
+                                            <div className="flex gap-2">{renderPorts(basePorts.filter((_, i) => i % 2 === 0), true)}</div>
+                                            <div className="flex gap-2">{renderPorts(basePorts.filter((_, i) => i % 2 !== 0), false)}</div>
                                         </>
                                     ) : (
-                                        <div className="flex gap-2">{renderPorts(basePorts, true, stackIndex)}</div>
+                                        <div className="flex gap-2">{renderPorts(basePorts, true)}</div>
                                     )}
                                 </div>
 
@@ -136,7 +127,7 @@ export default function SwitchVisualizer({
                                 {member.uplinkCount > 0 && (
                                     <div className="flex gap-2 bg-slate-900 p-2 rounded border border-slate-700">
                                         {uplinkPorts.map((portData) => {
-                                            const portNum = parseInt(portData.id.split('/')[2]);
+                                            const portNum = getPortNumber(portData.id);
                                             const isSelected = selectedPortIds.has(portData.id);
                                             const isTrunk = portData.mode === 'trunk';
                                             const isChannelMember = !!portData.channelGroupId;

@@ -23,6 +23,10 @@ export default function App() {
     const [showConnectionBar, setShowConnectionBar] = useState(false);
 
     const handleSshContent = (configText) => {
+        console.log("%c[SSH DEBUG] Content Received", "color: orange; font-weight: bold");
+        console.log("Length:", configText.length);
+        console.log("Preview (First 200):", configText.substring(0, 200));
+        console.log("Preview (Last 200):", configText.substring(configText.length - 200));
         setFileContent(configText);
         setShowConnectionBar(false); // Close bar on success
     };

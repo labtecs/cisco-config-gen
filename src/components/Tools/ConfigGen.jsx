@@ -37,6 +37,7 @@ export default function ConfigGen({ fileContent }) {
                     onPortClick={logic.handleVisualizerClick}
                     hostname={logic.hostname}
                     iosVersion={logic.iosVersion}
+                    portNaming={logic.portNaming}
                 />
 
                 {/* EDITOR & PREVIEW SPLIT */}
