@@ -3,21 +3,28 @@ import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter, Activity, 
 import MaintenanceModal from './MaintenanceModal';
 // Components & Hooks
 import { useCiscoGen } from '../../hooks/Cisco/useCiscoGen.js';
+import { useAppConfig } from '../../context/ConfigContext.jsx'; // Import the new hook
 import SwitchVisualizer from '../Visualizer/SwitchVisualizer';
 import GlobalSettings from '../Controls/GlobalSettings';
 import ConfigPreview from '../Editor/ConfigPreview';
 import SinglePortEditor from '../Editor/SinglePortEditor';
 import MultiPortEditor from '../Editor/MultiPortEditor';
-import PortChannelEditor from '../Editor/PortChannelEditor'; // Import the new component
+import PortChannelEditor from '../Editor/PortChannelEditor';
 
 export default function ConfigGen({ fileContent }) {
     const APP_VERSION = "v4.0";
     const logic = useCiscoGen({ fileContent });
+    const { settings } = useAppConfig(); // Use the config hook
     const [showMaintenance, setShowMaintenance] = React.useState(false);
+
+    // Determine layout classes based on settings
+    const mainContainerClass = settings.layout.mode === 'full-width'
+        ? "w-full p-4 md:p-6 space-y-8"
+        : "max-w-7xl mx-auto p-4 md:p-6 space-y-8";
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-32 relative">
-            <main className="max-w-7xl mx-auto p-4 md:p-6 space-y-8">
+            <main className={mainContainerClass}>
                      {/* CONTROLS */}
                     <GlobalSettings
                         stackMembers={logic.stackMembers} setStackMembers={logic.setStackMembers}

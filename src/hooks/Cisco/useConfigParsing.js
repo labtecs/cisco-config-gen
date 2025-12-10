@@ -121,7 +121,16 @@ export function useConfigParsing() {
                 }
                 else if (trimmed.includes('switchport mode trunk')) { currentInterface.mode = 'trunk'; currentInterface.includeInConfig = true; }
                 else if (trimmed.includes('switchport access vlan')) { currentInterface.accessVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? ''; currentInterface.includeInConfig = true; }
-                else if (trimmed.includes('switchport trunk allowed vlan')) { currentInterface.trunkVlans = trimmed.replace('switchport trunk allowed vlan ', '').replace(/^add\s+/, ''); currentInterface.includeInConfig = true; }
+                else if (trimmed.includes('switchport trunk allowed vlan')) {
+                    const vlanPart = trimmed.replace('switchport trunk allowed vlan ', '').trim();
+                    if (vlanPart.startsWith('add ')) {
+                        const newVlans = vlanPart.replace('add ', '').trim();
+                        currentInterface.trunkVlans = currentInterface.trunkVlans ? `${currentInterface.trunkVlans},${newVlans}` : newVlans;
+                    } else {
+                        currentInterface.trunkVlans = vlanPart;
+                    }
+                    currentInterface.includeInConfig = true;
+                }
                 else if (trimmed.includes('spanning-tree portfast')) { currentInterface.portfast = true; currentInterface.includeInConfig = true; }
                 else if (trimmed.includes('switchport voice vlan')) { currentInterface.voiceVlan = trimmed.split('vlan ')[1]?.split(/\s+/)[0] ?? ''; currentInterface.includeInConfig = true; }
                 else if (trimmed === 'shutdown') { currentInterface.noShutdown = false; }

@@ -72,7 +72,7 @@ app.post('/api/connect', (req, res) => {
         port: parseInt(port),
         username: username,
         password: password,
-        readyTimeout: 20000, // Increase timeout for slower devices
+        readyTimeout: 60000, // Increase timeout significantly for large stacks
         // Ciphers often needed for older Cisco Switches:
         algorithms: {
             kex: [
