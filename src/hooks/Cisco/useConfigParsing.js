@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { expandInterfaceType } from '../../utils/ciscoHelpers';
 
 /**
@@ -194,5 +194,5 @@ export function useConfigParsing() {
         };
     }, []);
 
-    return { parseRunningConfig };
+    return useMemo(() => ({ parseRunningConfig }), [parseRunningConfig]);
 }

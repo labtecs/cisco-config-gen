@@ -110,8 +110,7 @@ export function useCiscoGen({ fileContent }) {
         setStackMembers([
             { model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' }
         ]);
-        setTimeout(() => generatePortList(), 0);
-    }, [generatePortList, setPorts]);
+    }, [setPorts]);
 
     // --- MAIN EFFECT FOR FILE PARSING ---
     useEffect(() => {
