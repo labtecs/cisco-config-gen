@@ -107,13 +107,15 @@ export default function GlobalConfig({ fileContent }) {
                     </Section>
 
                     <Section icon={<Network size={16} />} title="VLANs">
-                        {vlans.map((vlan, index) => (
-                            <div key={index} className="flex items-center gap-2">
-                                <Input type="text" value={vlan.id} onChange={e => updateVlan(index, 'id', e.target.value)} placeholder="VLAN ID" className="w-1/4" />
-                                <Input type="text" value={vlan.name} onChange={e => updateVlan(index, 'name', e.target.value)} placeholder="VLAN Name" className="w-3/4" />
-                                <button onClick={() => removeVlan(index)} className="text-red-500 p-2 rounded-md hover:bg-red-50"><Trash2 size={16} /></button>
-                            </div>
-                        ))}
+                        <div className={vlans.length > 10 ? "max-h-[400px] overflow-y-auto pr-2 space-y-4" : "space-y-4"}>
+                            {vlans.map((vlan, index) => (
+                                <div key={index} className="flex items-center gap-2">
+                                    <Input type="text" value={vlan.id} onChange={e => updateVlan(index, 'id', e.target.value)} placeholder="VLAN ID" className="w-1/4" />
+                                    <Input type="text" value={vlan.name} onChange={e => updateVlan(index, 'name', e.target.value)} placeholder="VLAN Name" className="w-3/4" />
+                                    <button onClick={() => removeVlan(index)} className="text-red-500 p-2 rounded-md hover:bg-red-50"><Trash2 size={16} /></button>
+                                </div>
+                            ))}
+                        </div>
                         <button onClick={addVlan} className="flex items-center gap-2 text-blue-500 font-medium text-sm pt-2"><Plus size={16} /> VLAN hinzufügen</button>
                     </Section>
 
