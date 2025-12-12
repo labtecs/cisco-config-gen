@@ -81,6 +81,7 @@ export function useCiscoGen({ fileContent }) {
                         mode: 'trunk',
                         trunkVlans: 'all',
                         nativeVlan: 1,
+                        isDirty: false
                     });
                 }
             });
@@ -90,7 +91,7 @@ export function useCiscoGen({ fileContent }) {
     }, [ports]);
 
     const updatePortChannel = (id, field, value) => {
-        setPortChannels(current => current.map(pc => pc.id === id ? { ...pc, [field]: value } : pc));
+        setPortChannels(current => current.map(pc => pc.id === id ? { ...pc, [field]: value, isDirty: true } : pc));
     };
 
     // --- HELPERS ---
@@ -129,7 +130,7 @@ export function useCiscoGen({ fileContent }) {
             // Parsed ports are clean by definition
             const cleanPorts = parsedData.ports.map(p => ({ ...p, isDirty: false }));
             setPorts(cleanPorts);
-            setPortChannels(parsedData.portChannels || []);
+            setPortChannels((parsedData.portChannels || []).map(pc => ({ ...pc, isDirty: false })));
 
             setTimeout(() => { isParsingRef.current = false; }, 500);
         } else {

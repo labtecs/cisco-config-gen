@@ -161,10 +161,15 @@ export function useConfigGeneration({
             ? "! Showing Only Changed Interfaces\n"
             : "! Generated Switchport Config\n";
 
+        // Filter Port-Channels based on showOnlyChanges
+        let channelsToProcess = portChannels || [];
+        if (showOnlyChanges) {
+            channelsToProcess = channelsToProcess.filter(pc => pc.isDirty);
+        }
+
         // 1. Generate Port-Channel Interface Configs
-        // Note: Port-channel changes are not tracked with isDirty yet. For now, they are always included.
-        if (portChannels && portChannels.length > 0) {
-            portChannels.forEach(pc => {
+        if (channelsToProcess.length > 0) {
+            channelsToProcess.forEach(pc => {
                 output += `!\ninterface ${pc.name}\n`;
                 if (includeDescriptions && pc.description) {
                     output += ` description ${pc.description}\n`;
@@ -195,7 +200,7 @@ export function useConfigGeneration({
         }
         // <-- END of new logic
 
-        if (portsToProcess.length === 0 && (!portChannels || portChannels.length === 0)) {
+        if (portsToProcess.length === 0 && channelsToProcess.length === 0) {
             return "! No configuration to generate.\nend\n";
         }
 
