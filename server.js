@@ -13,58 +13,60 @@ app.use(bodyParser.json());
 app.post('/api/connect', (req, res) => {
     const { ip, port, username, password } = req.body;
     const conn = new Client();
-    let errorSent = false;
+    let responseSent = false;
 
     console.log(`[SSH] Connecting to ${ip}:${port}...`);
 
     conn.on('ready', () => {
-        console.log('[SSH] Connection established. Executing command...');
+        console.log('[SSH] Connection established. Starting shell...');
 
-        conn.exec('show running-config view full', (err, stream) => {
+        conn.shell((err, stream) => {
             if (err) {
-                const execErrorMessage = err ? err.toString() : 'An unknown exec error occurred.';
-                console.error('[SSH] Exec error:', execErrorMessage);
-                if (!errorSent) {
-                    errorSent = true;
-                    return res.status(500).json({ error: execErrorMessage });
+                console.error('[SSH] Shell error:', err);
+                if (!responseSent) {
+                    responseSent = true;
+                    return res.status(500).json({ error: err.toString() });
                 }
                 return;
             }
 
-            let configData = '';
-            let errorData = '';
+            let fullOutput = '';
 
+            // Collect data
             stream.on('data', (data) => {
-                configData += data.toString();
+                fullOutput += data.toString();
             });
 
-            stream.stderr.on('data', (data) => {
-                errorData += data.toString();
-            });
-
-            stream.on('close', (code) => {
-                console.log(`[SSH] Stream closed with code ${code}.`);
+            // Handle stream close (triggered by the 'exit' command we send)
+            stream.on('close', () => {
+                console.log('[SSH] Shell stream closed.');
                 conn.end();
-
-                if (errorSent) return;
-
-                if (errorData) {
-                    console.error('[SSH] Stderr:', errorData);
-                    // Don't send error response if we already sent data, some devices write non-fatal warnings to stderr
-                    if (configData.length < 100) { // Heuristic: if we got very little data, it's probably a real error
-                        errorSent = true;
-                        return res.status(500).json({ error: errorData.trim() });
-                    }
+                if (!responseSent) {
+                    responseSent = true;
+                    res.json({ success: true, config: fullOutput });
                 }
-                
-                res.json({ success: true, config: configData });
             });
+
+            // Send commands sequence
+            // terminal length 0: Disables paging
+            // show version: Gets MAC and Serial
+            // show ip route: Gets active Gateway
+            // show running-config view full: Gets the config
+            // exit: Closes the shell session
+            stream.end(
+                'terminal length 0\n' +
+                'show version\n' +
+                'show ip route\n' +
+                'show running-config view full\n' +
+                'exit\n'
+            );
         });
+
     }).on('error', (err) => {
         const connErrorMessage = err ? err.toString() : 'An unknown connection error occurred.';
         console.error('[SSH] Connection error:', connErrorMessage);
-        if (!errorSent) {
-            errorSent = true;
+        if (!responseSent) {
+            responseSent = true;
             res.status(500).json({ error: 'Connection failed: ' + connErrorMessage });
         }
     }).connect({
@@ -72,8 +74,8 @@ app.post('/api/connect', (req, res) => {
         port: parseInt(port),
         username: username,
         password: password,
-        readyTimeout: 60000, // Increase timeout significantly for large stacks
-        // Ciphers often needed for older Cisco Switches:
+        readyTimeout: 60000,
+        keepaliveInterval: 10000,
         algorithms: {
             kex: [
                 "diffie-hellman-group1-sha1",

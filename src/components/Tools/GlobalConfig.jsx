@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGlobalConfig } from '../../hooks/Cisco/useGlobalConfig';
-import { Copy, Download, Plus, Trash2, Settings, Network, Shield, GitFork, Clock } from 'lucide-react';
+import { Copy, Download, Plus, Trash2, Settings, Network, Shield, GitFork, Clock, Server, Fingerprint, AlertTriangle } from 'lucide-react';
 
 const Section = ({ icon, title, children }) => (
     <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
@@ -30,6 +30,9 @@ export default function GlobalConfig({ fileContent }) {
         generatedConfig,
         copyToClipboard,
         downloadFile,
+        macAddress,
+        serialNumber,
+        isGatewayLive,
     } = useGlobalConfig({ fileContent });
 
     return (
@@ -37,9 +40,34 @@ export default function GlobalConfig({ fileContent }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* --- SETTINGS --- */}
                 <div className="space-y-6">
-                    <Section icon={<Settings size={16} />} title="Allgemein">
+                    <Section icon={<Server size={16} />} title="System Information">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <Input type="text" value={hostname} onChange={e => setHostname(e.target.value)} placeholder="Hostname" />
+                            <div>
+                                <label className="text-xs font-medium text-slate-500">Hostname</label>
+                                <Input type="text" value={hostname} onChange={e => setHostname(e.target.value)} placeholder="Hostname" />
+                            </div>
+                            <div>
+                                <label className="text-xs font-medium text-slate-500">Base MAC Address</label>
+                                <Input type="text" value={macAddress || ''} readOnly placeholder="Nicht gefunden" className="bg-slate-100 cursor-not-allowed" />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-xs font-medium text-slate-500">Processor Board ID (Serial)</label>
+                            {serialNumber ? (
+                                <div className="font-mono text-sm p-2 bg-slate-100 rounded-md flex items-center gap-2">
+                                    <Fingerprint size={14} className="text-slate-400"/> {serialNumber}
+                                </div>
+                            ) : (
+                                <div className="text-sm p-2 bg-yellow-50 text-yellow-700 rounded-md flex items-center gap-2">
+                                    <AlertTriangle size={14} /> Keine Seriennummer gefunden. (Nur via SSH-Connect)
+                                </div>
+                            )}
+                        </div>
+                    </Section>
+
+                    <Section icon={<Settings size={16} />} title="Allgemein">
+                        <div>
+                            <label className="text-xs font-medium text-slate-500">Enable Secret</label>
                             <Input type="password" value={enableSecret} onChange={e => setEnableSecret(e.target.value)} placeholder="Enable Secret" />
                         </div>
                     </Section>
@@ -65,7 +93,17 @@ export default function GlobalConfig({ fileContent }) {
                     </Section>
 
                     <Section icon={<GitFork size={16} />} title="Routing">
-                        <Input type="text" value={defaultGateway} onChange={e => setDefaultGateway(e.target.value)} placeholder="Default Gateway" />
+                        <div>
+                            <label className="text-xs font-medium text-slate-500 flex items-center gap-1">
+                                Default Gateway
+                                {isGatewayLive ? (
+                                    <span className="text-green-600 font-bold text-[10px] bg-green-100 px-1.5 py-0.5 rounded-full" title="Aus 'show ip route' - sehr zuverlässig">LIVE</span>
+                                ) : (
+                                    <span className="text-orange-600 font-bold text-[10px] bg-orange-100 px-1.5 py-0.5 rounded-full" title="Aus 'running-config' - bitte prüfen">CONFIG</span>
+                                )}
+                            </label>
+                            <Input type="text" value={defaultGateway} onChange={e => setDefaultGateway(e.target.value)} placeholder="Default Gateway" />
+                        </div>
                     </Section>
 
                     <Section icon={<Clock size={16} />} title="Services">
