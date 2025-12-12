@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Lock, Edit3, Shield, Power, CheckSquare, Trash2, Zap, GitCommit } from 'lucide-react';
+import { X, Lock, Edit3, Shield, Power, CheckSquare, Trash2} from 'lucide-react';
 import { isNumeric } from '../../utils/ciscoHelpers';
 
 export default function MultiPortEditor({
@@ -16,7 +16,6 @@ export default function MultiPortEditor({
     // Bulk Props
     bulkMode, setBulkMode,
     bulkAccessVlan, setBulkAccessVlan,
-    bulkTrunkVlans, setBulkTrunkVlans,
     bulkVoiceVlan, setBulkVoiceVlan,
     bulkPortfast, setBulkPortfast,
     bulkInclude, setBulkInclude,
