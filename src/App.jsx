@@ -45,6 +45,7 @@ export default function App() {
     };
 
     const handleGlobalUpload = (event) => {
+        console.log("[App] Upload triggered", event.target.files);
         event.preventDefault();
         event.stopPropagation();
         handleFile(event.target.files[0]);

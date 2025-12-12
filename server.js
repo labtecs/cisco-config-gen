@@ -48,14 +48,10 @@ app.post('/api/connect', (req, res) => {
             });
 
             // Send commands sequence
-            // terminal length 0: Disables paging
-            // show version: Gets MAC and Serial
-            // show ip route: Gets active Gateway
-            // show running-config view full: Gets the config
-            // exit: Closes the shell session
             stream.end(
                 'terminal length 0\n' +
                 'show version\n' +
+                'show vlan brief\n' + // Added command
                 'show ip route\n' +
                 'show running-config view full\n' +
                 'exit\n'

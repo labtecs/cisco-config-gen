@@ -15,6 +15,11 @@ const Input = (props) => <input {...props} className="w-full p-2 border border-s
 const Select = (props) => <select {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
 
 export default function GlobalConfig({ fileContent }) {
+    // DEBUG: Prüfen, was ankommt
+    console.log("%c[GlobalConfig] Render", "color: cyan; font-weight: bold");
+    console.log("FileContent Length:", fileContent ? fileContent.length : 0);
+    console.log("FileContent Preview:", fileContent ? fileContent.substring(0, 100) : "EMPTY");
+
     const {
         hostname, setHostname,
         enableSecret, setEnableSecret,
