@@ -1,6 +1,6 @@
 import React from 'react';
 import { useGlobalConfig } from '../../hooks/Cisco/useGlobalConfig';
-import { Copy, Download, Plus, Trash2, Settings, Network, Shield, GitFork, Clock, Server, Fingerprint, AlertTriangle } from 'lucide-react';
+import { Copy, Download, Plus, Trash2, Settings, Network, Shield, GitFork, Clock, Server, Fingerprint, AlertTriangle, Upload, FileText } from 'lucide-react';
 
 const Section = ({ icon, title, children }) => (
     <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
@@ -13,6 +13,22 @@ const Section = ({ icon, title, children }) => (
 
 const Input = (props) => <input {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
 const Select = (props) => <select {...props} className="w-full p-2 border border-slate-300 rounded-md bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none text-sm" />;
+
+const FileUploadButton = ({ label, onUpload, colorClass = "bg-slate-100 hover:bg-slate-200 text-slate-600" }) => {
+    const handleChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => onUpload(ev.target.result);
+        reader.readAsText(file);
+    };
+    return (
+        <label className={`flex items-center justify-center gap-2 p-2 rounded-md cursor-pointer transition-colors text-xs font-medium border border-transparent ${colorClass}`}>
+            <Upload size={14} /> {label}
+            <input type="file" className="hidden" onChange={handleChange} />
+        </label>
+    );
+};
 
 export default function GlobalConfig({ fileContent }) {
     // DEBUG: Prüfen, was ankommt
@@ -38,6 +54,7 @@ export default function GlobalConfig({ fileContent }) {
         macAddress,
         serialNumber,
         isGatewayLive,
+        handleManualUpload,
     } = useGlobalConfig({ fileContent });
 
     return (
@@ -45,6 +62,18 @@ export default function GlobalConfig({ fileContent }) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* --- SETTINGS --- */}
                 <div className="space-y-6">
+                    
+                    {/* MANUELLER IMPORT */}
+                    <Section icon={<FileText size={16} />} title="Manueller Datei-Import">
+                        <div className="grid grid-cols-2 gap-3">
+                            <FileUploadButton label="Upload 'show version'" onUpload={(c) => handleManualUpload('version', c)} />
+                            <FileUploadButton label="Upload 'show vlan brief'" onUpload={(c) => handleManualUpload('vlan', c)} />
+                            <FileUploadButton label="Upload 'show ip route'" onUpload={(c) => handleManualUpload('route', c)} />
+                            <FileUploadButton label="Upload 'running-config'" onUpload={(c) => handleManualUpload('config', c)} colorClass="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200" />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-2">Laden Sie einzelne Textdateien hoch, falls kein direkter SSH-Zugriff möglich ist.</p>
+                    </Section>
+
                     <Section icon={<Server size={16} />} title="System Information">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>

@@ -93,6 +93,7 @@ export function useGlobalConfig({ fileContent }) {
     const [macAddress, setMacAddress] = useState(initialState.macAddress);
     const [serialNumber, setSerialNumber] = useState(initialState.serialNumber);
     const [isGatewayLive, setIsGatewayLive] = useState(initialState.isGatewayLive);
+    const [manualData, setManualData] = useState({ version: '', vlan: '', route: '', config: '' });
 
     const resetState = useCallback(() => {
         setHostname(initialState.hostname);
@@ -109,15 +110,45 @@ export function useGlobalConfig({ fileContent }) {
         setMacAddress(initialState.macAddress);
         setSerialNumber(initialState.serialNumber);
         setIsGatewayLive(initialState.isGatewayLive);
+        setManualData({ version: '', vlan: '', route: '', config: '' });
+    }, []);
+
+    const handleManualUpload = useCallback((type, content) => {
+        setManualData(prev => ({ ...prev, [type]: content }));
     }, []);
 
     useEffect(() => {
-        if (!fileContent) {
+        // Prüfen, ob wir überhaupt Daten haben (Entweder globaler FileContent oder manuelle Uploads)
+        const hasManualData = Object.values(manualData).some(val => val.length > 0);
+
+        if (!fileContent && !hasManualData) {
             resetState();
             return;
         }
 
-        const { macAddress, serialNumber, gateway, vlans: liveVlans, runningConfig } = parseShellOutput(fileContent);
+        let textToParse = '';
+
+        if (hasManualData) {
+            // Wir bauen einen künstlichen SSH-Output, damit der Parser funktioniert.
+            // Der Parser verlässt sich auf die Reihenfolge der Befehle als Trenner.
+            // Falls 'fileContent' existiert, aber kein SSH-Dump ist (sondern nur Config), nutzen wir es als Fallback für Config.
+            const configPart = manualData.config || (fileContent && !fileContent.match(/(?:show|sh) version/i) ? fileContent : '');
+
+            textToParse = `
+show version
+${manualData.version}
+show vlan brief
+${manualData.vlan}
+show ip route
+${manualData.route}
+show running-config
+${configPart}
+            `;
+        } else {
+            textToParse = fileContent;
+        }
+
+        const { macAddress, serialNumber, gateway, vlans: liveVlans, runningConfig } = parseShellOutput(textToParse);
 
         // Use live data if available
         if (macAddress) setMacAddress(macAddress);
@@ -260,7 +291,7 @@ export function useGlobalConfig({ fileContent }) {
         
         if (ntp.length > 0) setNtpServers(ntp.join(', '));
 
-    }, [fileContent, resetState]);
+    }, [fileContent, resetState, manualData]);
 
     // --- VLAN HANDLERS ---
     const addVlan = () => setVlans([...vlans, { id: '', name: '' }]);
@@ -332,5 +363,6 @@ export function useGlobalConfig({ fileContent }) {
         macAddress,
         serialNumber,
         isGatewayLive,
+        handleManualUpload, // Exportieren für UI
     };
 }
