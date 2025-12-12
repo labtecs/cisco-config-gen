@@ -3,7 +3,7 @@ import { CheckSquare, Zap, Shield, FastForward, Phone, Power, Filter, Activity, 
 import MaintenanceModal from './MaintenanceModal';
 // Components & Hooks
 import { useCiscoGen } from '../../hooks/Cisco/useCiscoGen.js';
-import { useAppConfig } from '../../context/ConfigContext.jsx'; // Import the new hook
+import { useAppConfig } from '../../context/ConfigContext.jsx';
 import SwitchVisualizer from '../Visualizer/SwitchVisualizer';
 import GlobalSettings from '../Controls/GlobalSettings';
 import ConfigPreview from '../Editor/ConfigPreview';
@@ -14,7 +14,7 @@ import PortChannelEditor from '../Editor/PortChannelEditor';
 export default function ConfigGen({ fileContent }) {
     const APP_VERSION = "v4.0";
     const logic = useCiscoGen({ fileContent });
-    const { settings } = useAppConfig(); // Use the config hook
+    const { settings } = useAppConfig();
     const [showMaintenance, setShowMaintenance] = React.useState(false);
 
     // Determine layout classes based on settings
@@ -243,6 +243,8 @@ export default function ConfigGen({ fileContent }) {
                             generatedConfig={logic.generatedConfig}
                             copyToClipboard={logic.copyToClipboard}
                             downloadFile={logic.downloadFile}
+                            showOnlyChanges={logic.showOnlyChanges}
+                            setShowOnlyChanges={logic.setShowOnlyChanges}
                             includeWrMem={logic.includeWrMem} setIncludeWrMem={logic.setIncludeWrMem}
                             useModernPortfast={logic.useModernPortfast} setUseModernPortfast={logic.setUseModernPortfast}
                             includeNoShutdown={logic.includeNoShutdown} setIncludeNoShutdown={logic.setIncludeNoShutdown}

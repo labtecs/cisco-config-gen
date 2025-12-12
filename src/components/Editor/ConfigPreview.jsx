@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Copy, Save, Shield, Wrench } from 'lucide-react';
+import { Terminal, Copy, Save, Shield, ListPlus, Diff } from 'lucide-react';
 
 /**
  * Renders the configuration preview panel.
@@ -10,6 +10,8 @@ import { Terminal, Copy, Save, Shield, Wrench } from 'lucide-react';
  * @param {string} props.generatedConfig - The generated configuration string to display.
  * @param {() => void} props.copyToClipboard - Function to copy the configuration to the clipboard.
  * @param {() => void} props.downloadFile - Function to download the configuration as a file.
+ * @param {boolean} props.showOnlyChanges - State for showing only changed ports.
+ * @param {(value: boolean) => void} props.setShowOnlyChanges - State setter for showOnlyChanges.
  * @param {boolean} props.includeWrMem - State for including the 'write memory' command.
  * @param {(value: boolean) => void} props.setIncludeWrMem - State setter for includeWrMem.
  * @param {boolean} props.useModernPortfast - State for using modern 'spanning-tree portfast' syntax.
@@ -31,6 +33,8 @@ export default function ConfigPreview({
                                           generatedConfig,
                                           copyToClipboard,
                                           downloadFile,
+                                          showOnlyChanges,
+                                          setShowOnlyChanges,
                                           includeWrMem, setIncludeWrMem,
                                           useModernPortfast, setUseModernPortfast,
                                           includeNoShutdown, setIncludeNoShutdown,
@@ -54,6 +58,13 @@ export default function ConfigPreview({
                             <span>config-preview.ios</span>
                         </div>
                         <div className="flex gap-2">
+                            <button
+                                onClick={() => setShowOnlyChanges(!showOnlyChanges)}
+                                className={`p-1.5 hover:bg-slate-700 rounded transition ${showOnlyChanges ? 'bg-blue-600 text-white' : 'text-slate-300'}`}
+                                title={showOnlyChanges ? "Show Full Config" : "Show Only Changes"}
+                            >
+                                <Diff size={16} />
+                            </button>
                             <button onClick={copyToClipboard} className="p-1.5 hover:bg-slate-700 rounded text-slate-300 transition" title="Copy">
                                 <Copy size={16} />
                             </button>

@@ -31,14 +31,15 @@ const naturalSort = (a, b) => {
  */
 export function useConfigGeneration({
     ports,
-    portChannels, // Added for Port-Channel
+    portChannels,
     includeBaseConfig,
     includeDescriptions,
     forcePoeReset,
     useModernPortfast,
     includeNoShutdown,
     includeWrMem,
-    useRangeCommands
+    useRangeCommands,
+    showOnlyChanges // <-- New prop
 }) {
     const getPortConfigString = useCallback((port) => {
         let lines = [];
@@ -156,9 +157,12 @@ export function useConfigGeneration({
     };
 
     const generatedConfig = useMemo(() => {
-        let output = "! Generated Switchport Config\n";
+        let output = showOnlyChanges 
+            ? "! Showing Only Changed Interfaces\n"
+            : "! Generated Switchport Config\n";
 
         // 1. Generate Port-Channel Interface Configs
+        // Note: Port-channel changes are not tracked with isDirty yet. For now, they are always included.
         if (portChannels && portChannels.length > 0) {
             portChannels.forEach(pc => {
                 output += `!\ninterface ${pc.name}\n`;
@@ -183,13 +187,20 @@ export function useConfigGeneration({
         }
 
         // 2. Generate Physical Interface Configs
-        const includedPorts = ports.filter(p => p.includeInConfig);
-        if (includedPorts.length === 0 && (!portChannels || portChannels.length === 0)) {
+        let portsToProcess = ports.filter(p => p.includeInConfig);
+
+        // <-- START of new logic
+        if (showOnlyChanges) {
+            portsToProcess = portsToProcess.filter(p => p.isDirty);
+        }
+        // <-- END of new logic
+
+        if (portsToProcess.length === 0 && (!portChannels || portChannels.length === 0)) {
             return "! No configuration to generate.\nend\n";
         }
 
         if (!useRangeCommands) {
-            const singlePortConfigs = includedPorts.map(port => getPortConfigString(port));
+            const singlePortConfigs = portsToProcess.map(port => getPortConfigString(port));
             singlePortConfigs.sort((a, b) => {
                 const aName = a.match(/^interface\s(.+)/m)?.[1];
                 const bName = b.match(/^interface\s(.+)/m)?.[1];
@@ -199,10 +210,9 @@ export function useConfigGeneration({
         } else {
             const getConfigSignature = (port) => {
                 const {
-                    id, name, bulkGroupId, isUplink, includeInConfig,
+                    id, name, bulkGroupId, isUplink, includeInConfig, isDirty, // Exclude isDirty from signature
                     ...configProps
                 } = port;
-                // For channel members, the signature is different
                 if (port.channelGroupId) {
                     return `channel-member-${port.channelGroupId}-${port.description}-${port.noShutdown}`;
                 }
@@ -210,7 +220,7 @@ export function useConfigGeneration({
             };
 
             const configGroups = new Map();
-            includedPorts.forEach(port => {
+            portsToProcess.forEach(port => {
                 const signature = getConfigSignature(port);
                 if (!configGroups.has(signature)) {
                     configGroups.set(signature, []);
@@ -250,7 +260,7 @@ export function useConfigGeneration({
         output = output.trim() + "\n\nend\n";
         if (includeWrMem) { output += "wr mem\n"; }
         return output;
-    }, [ports, portChannels, includeWrMem, getPortConfigString, useRangeCommands, includeDescriptions]);
+    }, [ports, portChannels, includeWrMem, getPortConfigString, useRangeCommands, includeDescriptions, showOnlyChanges]);
 
     return { generatedConfig };
 }

@@ -25,7 +25,8 @@ export function usePortState({ stackMembers, portNaming }) {
 
         let existing = existingMap.get(portId);
         if (existing) {
-            return { ...existing, id: portId, name: interfaceName, isUplink, bulkGroupId: null };
+            // Preserve isDirty flag if it exists, otherwise it's a clean port
+            return { ...existing, id: portId, name: interfaceName, isUplink, bulkGroupId: null, isDirty: !!existing.isDirty };
         } else {
             return {
                 id: portId, name: interfaceName, description: isUplink ? 'Uplink' : '',
@@ -33,7 +34,8 @@ export function usePortState({ stackMembers, portNaming }) {
                 portfast: !isUplink, voiceVlan: '', includeInConfig: false, isUplink: isUplink,
                 noShutdown: true, poeMode: 'auto', prependDefault: false, resetOnly: false, bulkGroupId: null,
                 portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
-                channelGroupId: ''
+                channelGroupId: '',
+                isDirty: false // Initialize as not dirty
             };
         }
     }, [portNaming, stackMembers.length]);
@@ -70,7 +72,7 @@ export function usePortState({ stackMembers, portNaming }) {
             if (!isVlanRange(value) && !['a', 'al', 'all'].includes(lower)) return;
         }
 
-        setPorts(current => current.map(p => p.id === id ? { ...p, [field]: value, bulkGroupId: null } : p));
+        setPorts(current => current.map(p => p.id === id ? { ...p, [field]: value, bulkGroupId: null, isDirty: true } : p));
     }, []);
 
     return { ports, setPorts, generatePortList, updatePort };

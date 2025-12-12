@@ -32,6 +32,7 @@ export function useCiscoGen({ fileContent }) {
     const [useRangeCommands, setUseRangeCommands] = useState(true);
     const [includeBaseConfig, setIncludeBaseConfig] = useState(true);
     const [forcePoeReset, setForcePoeReset] = useState(false);
+    const [showOnlyChanges, setShowOnlyChanges] = useState(false); // <-- New State
 
     // Column Visibility
     const [showPoeColumn, setShowPoeColumn] = useState(false);
@@ -59,14 +60,12 @@ export function useCiscoGen({ fileContent }) {
     const { ports, setPorts, generatePortList, updatePort } = usePortState({ stackMembers, portNaming });
     const { selectedPortIds, toggleSelection, toggleSelectAll, selectPortsByVlan, clearSelection } = useSelection(ports);
     const { bulkState, setBulkState, applyBulkEdit } = useBulkEdit({ setPorts, selectedPortIds, globalVoiceVlan });
-    const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands });
+    const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands, showOnlyChanges }); // Pass new state
     const { parseRunningConfig } = useConfigParsing();
     const isParsingRef = useRef(false);
 
     // --- PORT-CHANNEL LOGIC (IF MANUALLY CREATED) ---
     useEffect(() => {
-        // This effect now primarily handles manual additions/removals in the UI.
-        // Parsing from a file is handled in the fileContent effect.
         const activeGroupIds = [...new Set(ports.map(p => p.channelGroupId).filter(id => id))];
         
         setPortChannels(currentChannels => {
@@ -107,7 +106,8 @@ export function useCiscoGen({ fileContent }) {
         setVlanNames({});
         setGlobalVoiceVlan('');
         setPorts([]);
-        setPortChannels([]); // Also reset port-channels
+        setPortChannels([]);
+        setShowOnlyChanges(false); // Reset the new state
         setStackMembers([
             { model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' }
         ]);
@@ -126,11 +126,11 @@ export function useCiscoGen({ fileContent }) {
             setGlobalVoiceVlan(parsedData.globalVoiceVlan);
             setPortNaming(parsedData.portNaming);
             setStackMembers(parsedData.stackMembers);
-            setPorts(parsedData.ports);
-            setPortChannels(parsedData.portChannels || []); // Set parsed port-channels
+            // Parsed ports are clean by definition
+            const cleanPorts = parsedData.ports.map(p => ({ ...p, isDirty: false }));
+            setPorts(cleanPorts);
+            setPortChannels(parsedData.portChannels || []);
 
-            // Safety timeout to reset the ref in case stackMembers didn't change
-            // (which would prevent the generation effect from running and resetting the flag)
             setTimeout(() => { isParsingRef.current = false; }, 500);
         } else {
             resetState();
@@ -146,9 +146,8 @@ export function useCiscoGen({ fileContent }) {
     }, [generatePortList]);
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
-    // ... rest of the hook remains the same ...
-
     const availableVlans = useMemo(() => {
+        // ... (omitted for brevity, no changes needed here)
         const activeOnPorts = new Set();
         const allVlans = new Set(declaredVlans);
         const complexRanges = new Set();
@@ -200,15 +199,15 @@ export function useCiscoGen({ fileContent }) {
         return [...singleVlans, ...rangeVlans];
     }, [declaredVlans, ports, vlanNames]);
 
-    const toggleInclude = (id) => { setPorts(ports.map(p => p.id === id ? { ...p, includeInConfig: !p.includeInConfig } : p)); };
+    const toggleInclude = (id) => { setPorts(ports.map(p => p.id === id ? { ...p, includeInConfig: !p.includeInConfig, isDirty: true } : p)); };
     const toggleGlobalInclude = () => {
         const allIncluded = ports.length > 0 && ports.every(p => p.includeInConfig);
-        setPorts(ports.map(p => ({ ...p, includeInConfig: !allIncluded })));
+        setPorts(ports.map(p => ({ ...p, includeInConfig: !allIncluded, isDirty: true })));
     };
 
     const handleClearDescriptions = () => {
         if (confirmClearDesc) {
-            setPorts(ports.map(p => ({ ...p, description: '' })));
+            setPorts(ports.map(p => ({ ...p, description: '', isDirty: true })));
             setConfirmClearDesc(false);
             showToast("Alle Beschreibungen gelöscht.");
         } else {
@@ -234,17 +233,20 @@ export function useCiscoGen({ fileContent }) {
                 poeMode: 'auto', bulkGroupId: null,
                 prependDefault: false,
                 resetOnly: false,
-                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity'
+                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
+                isDirty: true // Mark as dirty on reset
             };
         }));
         showToast("Port UI Reset.");
     };
 
-    const toggleNoShut = (id) => { setPorts(ports.map(p => p.id === id ? { ...p, noShutdown: !p.noShutdown } : p)); };
+    const toggleNoShut = (id) => { setPorts(ports.map(p => p.id === id ? { ...p, noShutdown: !p.noShutdown, isDirty: true } : p)); };
     const toggleVoiceVlan = (id, currentVal) => {
         const newVal = currentVal ? '' : (globalVoiceVlan || '1');
-        updatePort(id, 'voiceVlan', newVal);
+        updatePort(id, 'voiceVlan', newVal); // updatePort already marks as dirty
     };
+
+    // ... (rest of the handlers and logic)
 
     const scrollToPreviewPort = (id) => {
         const el = document.getElementById(`preview-config-${id}`);
@@ -316,6 +318,7 @@ export function useCiscoGen({ fileContent }) {
         useRangeCommands, setUseRangeCommands,
         includeBaseConfig, setIncludeBaseConfig,
         forcePoeReset, setForcePoeReset,
+        showOnlyChanges, setShowOnlyChanges, // <-- Expose new state
         ports,
         viewMode, setViewMode,
         singleEditPortId, setSingleEditPortId,
