@@ -166,18 +166,18 @@ export default function MultiPortEditor({
                 {ports.map((port) => {
                     const isSelected = selectedPortIds.has(port.id);
                     const isChannelMember = !!port.channelGroupId;
-                    const isReadOnly = isChannelMember || (!port.includeInConfig && !isSelected);
+                    // ** Change is here: A port is only read-only if it's a channel member. **
+                    const isReadOnly = isChannelMember;
 
                     let rowClasses = "transition-all group border-b border-slate-100 ";
                     if (isSelected) {
                         rowClasses += "bg-yellow-50 hover:bg-yellow-100 ring-1 ring-inset ring-yellow-200 z-10 ";
-                        if (!port.includeInConfig) rowClasses += "text-slate-500 ";
                     } else if (isChannelMember) {
                         rowClasses += "bg-purple-50 hover:bg-purple-100 ";
                     }
                     else {
                         if (!port.includeInConfig) {
-                            rowClasses += "bg-slate-50 opacity-50 grayscale ";
+                            rowClasses += "bg-slate-50 opacity-60 grayscale-[50%] ";
                         } else {
                             if (port.mode === 'trunk') {
                                 rowClasses += "bg-orange-50/50 hover:bg-orange-100 ";
@@ -186,6 +186,9 @@ export default function MultiPortEditor({
                             }
                         }
                     }
+
+                    // Specific input disabled state for non-readonly fields
+                    const isDisabled = !port.includeInConfig && !isSelected;
 
                     return (
                         <tr key={port.id}
@@ -202,11 +205,11 @@ export default function MultiPortEditor({
                                     {port.isUplink && <span className="w-max mt-1 px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[9px] rounded uppercase leading-none">SFP</span>}
                                 </div>
                             </td>
-                            <td className="p-2"><input type="text" placeholder="Description..." className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none transition-colors text-slate-700" value={port.description} onChange={(e) => updatePort(port.id, 'description', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/></td>
+                            <td className="p-2"><input type="text" placeholder="Description..." className="w-full bg-transparent border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none transition-colors text-slate-700" value={port.description} onChange={(e) => updatePort(port.id, 'description', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/></td>
                             
                             {showChannelGroupColumn && (
                                 <td className="p-2">
-                                    <input type="text" maxLength={4} placeholder="ID" className="w-full p-1 border border-slate-200 rounded text-center" value={port.channelGroupId} onChange={(e) => updatePort(port.id, 'channelGroupId', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={!port.includeInConfig && !isSelected}/>
+                                    <input type="text" maxLength={4} placeholder="ID" className="w-full p-1 border border-slate-200 rounded text-center" value={port.channelGroupId} onChange={(e) => updatePort(port.id, 'channelGroupId', e.target.value)} onFocus={() => scrollToPreviewPort(port.id)} disabled={isReadOnly}/>
                                 </td>
                             )}
 
@@ -273,7 +276,7 @@ export default function MultiPortEditor({
                             )}
 
                             {showStateColumn && (
-                                <td className="p-2 text-center"><button onClick={() => toggleNoShut(port.id)} className={`p-1.5 rounded-full transition-colors ${port.noShutdown ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`} disabled={!port.includeInConfig && !isSelected}><Power size={14} /></button></td>
+                                <td className="p-2 text-center"><button onClick={() => toggleNoShut(port.id)} className={`p-1.5 rounded-full transition-colors ${port.noShutdown ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' : 'bg-red-100 text-red-600 hover:bg-red-200'}`} disabled={isDisabled}><Power size={14} /></button></td>
                             )}
                         </tr>
                     )})}

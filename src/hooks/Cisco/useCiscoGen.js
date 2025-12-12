@@ -4,7 +4,7 @@ import { useSelection } from './useSelection';
 import { useBulkEdit } from './useBulkEdit';
 import { useConfigGeneration } from './useConfigGeneration';
 import { useConfigParsing } from './useConfigParsing';
-import { parseVlanString } from '../../utils/ciscoHelpers';
+import { parseVlanString, isNumeric, isVlanRange } from '../../utils/ciscoHelpers';
 
 /**
  * The main hook that orchestrates all logic for the Cisco Config Generator.
@@ -32,7 +32,7 @@ export function useCiscoGen({ fileContent }) {
     const [useRangeCommands, setUseRangeCommands] = useState(true);
     const [includeBaseConfig, setIncludeBaseConfig] = useState(true);
     const [forcePoeReset, setForcePoeReset] = useState(false);
-    const [showOnlyChanges, setShowOnlyChanges] = useState(false); // <-- New State
+    const [showOnlyChanges, setShowOnlyChanges] = useState(false);
 
     // Column Visibility
     const [showPoeColumn, setShowPoeColumn] = useState(false);
@@ -57,35 +57,50 @@ export function useCiscoGen({ fileContent }) {
     const [showSecurityOptions, setShowSecurityOptions] = useState(false);
 
     // --- COMPOSING SUB-HOOKS ---
-    const { ports, setPorts, generatePortList, updatePort } = usePortState({ stackMembers, portNaming });
+    const { ports, setPorts, generatePortList } = usePortState({ stackMembers, portNaming });
     const { selectedPortIds, toggleSelection, toggleSelectAll, selectPortsByVlan, clearSelection } = useSelection(ports);
     const { bulkState, setBulkState, applyBulkEdit } = useBulkEdit({ setPorts, selectedPortIds, globalVoiceVlan });
-    const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands, showOnlyChanges }); // Pass new state
+    const { generatedConfig } = useConfigGeneration({ ports, portChannels, includeBaseConfig, includeDescriptions, forcePoeReset, useModernPortfast, includeNoShutdown, includeWrMem, useRangeCommands, showOnlyChanges });
     const { parseRunningConfig } = useConfigParsing();
     const isParsingRef = useRef(false);
 
-    // --- PORT-CHANNEL LOGIC (IF MANUALLY CREATED) ---
+    // --- NEW updatePort function with auto-enable logic ---
+    const updatePort = useCallback((id, field, value) => {
+        // --- VALIDATION ---
+        if (['accessVlan', 'voiceVlan', 'nativeVlan', 'channelGroupId', 'secMax', 'secAgingTime'].includes(field)) {
+            if (!isNumeric(value)) return;
+        }
+        if (field === 'trunkVlans') {
+            const lower = value.toLowerCase();
+            if (!isVlanRange(value) && !['a', 'al', 'all'].includes(lower)) return;
+        }
+
+        setPorts(current => current.map(p => {
+            if (p.id !== id) return p;
+
+            const updatedPort = { ...p, [field]: value, isDirty: true, bulkGroupId: null };
+
+            // Auto-enable logic
+            if (field !== 'includeInConfig' && !p.includeInConfig) {
+                updatedPort.includeInConfig = true;
+            }
+
+            return updatedPort;
+        }));
+    }, [setPorts]);
+
+
+    // --- PORT-CHANNEL LOGIC ---
     useEffect(() => {
         const activeGroupIds = [...new Set(ports.map(p => p.channelGroupId).filter(id => id))];
-        
         setPortChannels(currentChannels => {
             const filteredChannels = currentChannels.filter(pc => activeGroupIds.includes(pc.id));
             const existingIds = new Set(filteredChannels.map(pc => pc.id));
-
             activeGroupIds.forEach(id => {
                 if (!existingIds.has(id)) {
-                    filteredChannels.push({
-                        id: id,
-                        name: `Port-channel${id}`,
-                        description: '',
-                        mode: 'trunk',
-                        trunkVlans: 'all',
-                        nativeVlan: 1,
-                        isDirty: false
-                    });
+                    filteredChannels.push({ id, name: `Port-channel${id}`, description: '', mode: 'trunk', trunkVlans: 'all', nativeVlan: 1, isDirty: false });
                 }
             });
-
             return filteredChannels.sort((a, b) => parseInt(a.id) - parseInt(b.id));
         });
     }, [ports]);
@@ -108,10 +123,8 @@ export function useCiscoGen({ fileContent }) {
         setGlobalVoiceVlan('');
         setPorts([]);
         setPortChannels([]);
-        setShowOnlyChanges(false); // Reset the new state
-        setStackMembers([
-            { model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' }
-        ]);
+        setShowOnlyChanges(false);
+        setStackMembers([{ model: 48, uplinkCount: 4, baseInterfaceType: 'GigabitEthernet', uplinkInterfaceType: 'TenGigabitEthernet' }]);
     }, [setPorts]);
 
     // --- MAIN EFFECT FOR FILE PARSING ---
@@ -127,11 +140,9 @@ export function useCiscoGen({ fileContent }) {
             setGlobalVoiceVlan(parsedData.globalVoiceVlan);
             setPortNaming(parsedData.portNaming);
             setStackMembers(parsedData.stackMembers);
-            // Parsed ports are clean by definition
             const cleanPorts = parsedData.ports.map(p => ({ ...p, isDirty: false }));
             setPorts(cleanPorts);
             setPortChannels((parsedData.portChannels || []).map(pc => ({ ...pc, isDirty: false })));
-
             setTimeout(() => { isParsingRef.current = false; }, 500);
         } else {
             resetState();
@@ -148,55 +159,33 @@ export function useCiscoGen({ fileContent }) {
     useEffect(() => { if (ports.length > 0 && !singleEditPortId) { setSingleEditPortId(ports[0].id); } }, [ports, singleEditPortId]);
 
     const availableVlans = useMemo(() => {
-        // ... (omitted for brevity, no changes needed here)
         const activeOnPorts = new Set();
         const allVlans = new Set(declaredVlans);
         const complexRanges = new Set();
-
         ports.forEach(p => {
             if (p.mode === 'access' && p.accessVlan) {
                 activeOnPorts.add(p.accessVlan);
                 allVlans.add(p.accessVlan);
             }
-
             if (p.mode === 'trunk' && p.trunkVlans) {
                 const parsedTrunkVlans = parseVlanString(p.trunkVlans);
-                if (parsedTrunkVlans.length >= 50) {
-                    complexRanges.add(p.trunkVlans);
-                } else {
-                    parsedTrunkVlans.forEach(v => {
-                        activeOnPorts.add(v);
-                        allVlans.add(v);
-                    });
-                }
+                if (parsedTrunkVlans.length >= 50) { complexRanges.add(p.trunkVlans); }
+                else { parsedTrunkVlans.forEach(v => { activeOnPorts.add(v); allVlans.add(v); }); }
             }
         });
-
         if (!allVlans.has('1')) allVlans.add('1');
-
         const singleVlans = Array.from(allVlans).filter(v => v).sort((a, b) => parseInt(a) - parseInt(b)).map(vlan => {
             const strVlan = String(vlan);
             const isDeclared = declaredVlans.some(d => String(d) === strVlan);
             const isUsed = activeOnPorts.has(strVlan);
             const name = vlanNames[strVlan];
-
             let status = 'manual';
             if (strVlan === '1') status = 'default';
             else if (isDeclared && isUsed) status = 'used';
             else if (isDeclared && !isUsed) status = 'unused';
-
             return { id: strVlan, status, name, isRange: false };
         });
-
-        const rangeVlans = Array.from(complexRanges).map(rangeStr => {
-            return {
-                id: rangeStr,
-                status: 'used',
-                name: 'Large Trunk Range',
-                isRange: true
-            };
-        });
-
+        const rangeVlans = Array.from(complexRanges).map(rangeStr => ({ id: rangeStr, status: 'used', name: 'Large Trunk Range', isRange: true }));
         return [...singleVlans, ...rangeVlans];
     }, [declaredVlans, ports, vlanNames]);
 
@@ -221,21 +210,12 @@ export function useCiscoGen({ fileContent }) {
         setPorts(ports.map(p => {
             if (p.id !== id) return p;
             return {
-                ...p,
-                description: '',
-                mode: p.isUplink ? 'trunk' : 'access',
-                accessVlan: '',
-                trunkVlans: 'all',
-                nativeVlan: 1,
-                portfast: !p.isUplink,
-                voiceVlan: '',
-                includeInConfig: !p.isUplink,
-                noShutdown: true,
-                poeMode: 'auto', bulkGroupId: null,
-                prependDefault: false,
-                resetOnly: false,
-                portSecurity: false, secMax: 1, secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
-                isDirty: true // Mark as dirty on reset
+                ...p, description: '', mode: p.isUplink ? 'trunk' : 'access', accessVlan: '',
+                trunkVlans: 'all', nativeVlan: 1, portfast: !p.isUplink, voiceVlan: '',
+                includeInConfig: !p.isUplink, noShutdown: true, poeMode: 'auto', bulkGroupId: null,
+                prependDefault: false, resetOnly: false, portSecurity: false, secMax: 1,
+                secViolation: 'shutdown', secSticky: false, secAgingTime: 0, secAgingType: 'inactivity',
+                isDirty: true
             };
         }));
         showToast("Port UI Reset.");
@@ -244,10 +224,8 @@ export function useCiscoGen({ fileContent }) {
     const toggleNoShut = (id) => { setPorts(ports.map(p => p.id === id ? { ...p, noShutdown: !p.noShutdown, isDirty: true } : p)); };
     const toggleVoiceVlan = (id, currentVal) => {
         const newVal = currentVal ? '' : (globalVoiceVlan || '1');
-        updatePort(id, 'voiceVlan', newVal); // updatePort already marks as dirty
+        updatePort(id, 'voiceVlan', newVal);
     };
-
-    // ... (rest of the handlers and logic)
 
     const scrollToPreviewPort = (id) => {
         const el = document.getElementById(`preview-config-${id}`);
@@ -270,16 +248,11 @@ export function useCiscoGen({ fileContent }) {
     };
 
     const copyToClipboard = async () => {
-        if (!navigator.clipboard) {
-            showToast("Clipboard API nicht verfügbar.");
-            return;
-        }
+        if (!navigator.clipboard) { showToast("Clipboard API nicht verfügbar."); return; }
         try {
             await navigator.clipboard.writeText(generatedConfig);
             showToast("Konfiguration kopiert!");
-        } catch (err) {
-            showToast("Fehler beim Kopieren.");
-        }
+        } catch (err) { showToast("Fehler beim Kopieren."); }
     };
 
     const downloadFile = () => {
@@ -307,42 +280,22 @@ export function useCiscoGen({ fileContent }) {
 
     return {
         // State
-        stackMembers, setStackMembers,
-        portNaming, setPortNaming,
-        portLayout, setPortLayout,
-        globalVoiceVlan, setGlobalVoiceVlan,
-        hostname, iosVersion,
-        includeWrMem, setIncludeWrMem,
-        useModernPortfast, setUseModernPortfast,
-        includeNoShutdown, setIncludeNoShutdown,
-        includeDescriptions, setIncludeDescriptions,
-        useRangeCommands, setUseRangeCommands,
-        includeBaseConfig, setIncludeBaseConfig,
-        forcePoeReset, setForcePoeReset,
-        showOnlyChanges, setShowOnlyChanges, // <-- Expose new state
-        ports,
-        viewMode, setViewMode,
-        singleEditPortId, setSingleEditPortId,
-        showPoeColumn, setShowPoeColumn,
-        showSecColumn, setShowSecColumn,
-        showStateColumn, setShowStateColumn,
-        showVoiceColumn, setShowVoiceColumn,
-        showFastColumn, setShowFastColumn,
-        showChannelGroupColumn, setShowChannelGroupColumn,
-        toast, confirmClearDesc,
-        selectedPortIds, ...setBulkState, ...bulkState,
-        showSecurityOptions, setShowSecurityOptions,
-        availableVlans, generatedConfig, singlePort,
-        portChannels,
-        switchToSingleEditor,
-        resetState,
+        stackMembers, setStackMembers, portNaming, setPortNaming, portLayout, setPortLayout,
+        globalVoiceVlan, setGlobalVoiceVlan, hostname, iosVersion, includeWrMem, setIncludeWrMem,
+        useModernPortfast, setUseModernPortfast, includeNoShutdown, setIncludeNoShutdown,
+        includeDescriptions, setIncludeDescriptions, useRangeCommands, setUseRangeCommands,
+        includeBaseConfig, setIncludeBaseConfig, forcePoeReset, setForcePoeReset,
+        showOnlyChanges, setShowOnlyChanges, ports, viewMode, setViewMode, singleEditPortId, setSingleEditPortId,
+        showPoeColumn, setShowPoeColumn, showSecColumn, setShowSecColumn, showStateColumn, setShowStateColumn,
+        showVoiceColumn, setShowVoiceColumn, showFastColumn, setShowFastColumn, showChannelGroupColumn, setShowChannelGroupColumn,
+        toast, confirmClearDesc, selectedPortIds, ...setBulkState, ...bulkState,
+        showSecurityOptions, setShowSecurityOptions, availableVlans, generatedConfig, singlePort,
+        portChannels, switchToSingleEditor, resetState,
 
         // Handlers
-        updatePort, toggleInclude, toggleGlobalInclude,
-        handleClearDescriptions, resetPortToDefault, toggleNoShut, toggleVoiceVlan, clearSelection,
-        scrollToPreviewPort, handleVisualizerClick, toggleSelection, toggleSelectAll,
-        selectPortsByVlan, applyBulkEdit, copyToClipboard, downloadFile,
-        handlePrevPort, handleNextPort,
-        updatePortChannel,
+        updatePort, toggleInclude, toggleGlobalInclude, handleClearDescriptions, resetPortToDefault,
+        toggleNoShut, toggleVoiceVlan, clearSelection, scrollToPreviewPort, handleVisualizerClick,
+        toggleSelection, toggleSelectAll, selectPortsByVlan, applyBulkEdit, copyToClipboard,
+        downloadFile, handlePrevPort, handleNextPort, updatePortChannel,
     };
 }

@@ -1,5 +1,4 @@
 import { useState, useCallback } from 'react';
-import { isNumeric, isVlanRange } from '../../utils/ciscoHelpers';
 
 /**
  * Manages the state and logic for the port list itself.
@@ -59,21 +58,7 @@ export function usePortState({ stackMembers, portNaming }) {
         });
     }, [stackMembers, createPortObject]);
 
-    const updatePort = useCallback((id, field, value) => {
-        // --- VALIDATION ---
-        if (['accessVlan', 'voiceVlan', 'nativeVlan', 'channelGroupId'].includes(field)) {
-            if (!isNumeric(value)) return;
-        }
-        if (['secMax', 'secAgingTime'].includes(field)) {
-            if (!isNumeric(value)) return;
-        }
-        if (field === 'trunkVlans') {
-            const lower = value.toLowerCase();
-            if (!isVlanRange(value) && !['a', 'al', 'all'].includes(lower)) return;
-        }
-
-        setPorts(current => current.map(p => p.id === id ? { ...p, [field]: value, bulkGroupId: null, isDirty: true } : p));
-    }, []);
-
-    return { ports, setPorts, generatePortList, updatePort };
+    // This hook now only exposes the raw state and the list generator.
+    // The complex update logic is handled by the consuming hook (useCiscoGen).
+    return { ports, setPorts, generatePortList };
 }
